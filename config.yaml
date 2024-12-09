@@ -1,0 +1,46 @@
+initializer:
+  init_type: "glorot"
+  params:
+    L: 1e-2
+    U: 1e-3
+    g_max: 1e-2
+    g_min: 1e-3
+
+layers:
+  fully_connected: [5, 16, 2]
+  lower_cond_bound: float(1e-6)
+  upper_cond_bound: float(10)
+
+diodes:
+  VDIODE1: -0.5
+  VDIODE2: 0.5
+
+learning_rate_factors:
+  lr_layer1: 1
+  lr_layer2: 3
+
+gamma_values:
+  layer1: 0.03
+  layer2: 0.01
+
+beta: 0.01
+
+amplification:
+  ampv: "AMP = 3"
+  ampc: "AMPC = 1"
+
+loss:
+  type: "MSE"
+  boundary: 0.5
+
+network:
+  sample_file: "/home/filip/simulations/sample_files/eldo_samples/python_generated_netlists/my_network_netlist2.cir"
+  output_dir: "/home/filip/simulations/simulations"
+
+dataset:
+  n_of_epochs: 1
+  scale_factor: 3
+  noise: 0
+  bias: 1.5
+  num_samples: 3200
+  batch_size: 100

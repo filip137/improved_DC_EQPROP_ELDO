@@ -1,0 +1,61 @@
+m255
+K4
+z2
+13
+!s112 1.1
+!i10d 8192
+!i10e 25
+!i10f 100
+cModel Technology
+Z0 d/home/filip/simulations/improved_simulation_functions
+:bsim3_addnoise
+!s20a 1
+!s209 5
+!s208 2j51PcB3lAB0Ea73_2F166
+V2j51PcB3lAB0Ea73_2F166
+!s207 1
+!s206 1733508430
+Z1 w1446716509
+Z2 !s205  +ogr  -k 2005 
+!s204 1
+!s203 4280
+!s202 223
+nbsim3_addnoise
+F/cao/DK/ST/HCMOS9A_10.9/PDK_STM_hcmos9lp_HV_M4_5V0/10.9-10/DATA/MODELS/ELDO/CORNERS/bsim3_addnoise.va
+R0
+!s201 8
+Z3 !s8d adms
+:gidl
+!s20a 1
+!s209 5
+!s208 k6B12eF0^773_n12AV33E6
+Vk6B12eF0^773_n12AV33E6
+!s207 1
+!s206 1733508462
+R1
+R2
+!s204 1
+!s203 4672
+!s202 224
+ngidl
+F/cao/DK/ST/HCMOS9A_10.9/PDK_STM_hcmos9lp_HV_M4_5V0/10.9-10/DATA/MODELS/ELDO/CORNERS/gidl.va
+R0
+!s201 8
+R3
+:gidl_gisl
+!s20a 1
+!s209 5
+!s208 k3B3cg21id32iBF2Y>92Y7
+Vk3B3cg21id32iBF2Y>92Y7
+!s207 28
+!s206 1733399228
+R1
+R2
+!s204 1
+!s203 4676
+!s202 224
+ngidl_gisl
+F/cao/DK/ST/HCMOS9A_10.9/PDK_STM_hcmos9lp_HV_M4_5V0/10.9-10/DATA/MODELS/ELDO/CORNERS/gidl_gisl.va
+R0
+!s201 8
+R3
