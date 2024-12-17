@@ -37,10 +37,16 @@ class BaseLayer:
 #I create different kinds of layers and in each one I store the parameters in a dictionary which contains keys and values. I can then easily gather all the keys to generate the netlist
 
 class InputLayer(BaseLayer):
-    def __init__(self, n_of_nodes, which_layer=0, trainable=False):
+    def __init__(self, n_of_nodes, vdc_bias, freq, which_layer=0, trainable=False):
         # Initialize the parent class (BaseLayer) with the same number of inputs and outputs
         super().__init__(n_of_nodes, n_of_nodes, which_layer=which_layer, trainable=trainable)
         
+        
+        self.vdc_bias = vdc_bias
+        self.freq = freq
+        
+        
+        self.inputs = {}
         # The number of inputs will now equal the number of outputs (n_of_nodes)
         self.input_node_list = self.generate_node_names()
         self.output_node_list = ['0'] * len(self.input_node_list)
@@ -52,7 +58,7 @@ class InputLayer(BaseLayer):
         self.connections = self.build_connections()
         
         
-
+        
     def generate_sources(self):
         voltage_sources = []
         for i in range(1, self.n_of_inputs +1):
@@ -68,14 +74,15 @@ class InputLayer(BaseLayer):
         return node_names
     
     def generate_variables(self):
-        vdc_parameters = []
+        vac_parameters = []
         for i in range(1, self.n_of_inputs + 1):
-            if i == self.n_of_inputs:
-                vdc = f"VBIAS{i}"
-            else:
-                vdc = f"VDC{i}"
-            vdc_parameters.append(vdc)
-        return vdc_parameters
+            v_ac = f"VAC{i}"
+            self.inputs[v_ac] = 0
+            vac_parameters.append(v_ac)
+        #VDC bias at each voltage source
+        #vac_parameters.append("VAC_BIAS")
+        vac_parameters.append("VBIAS")
+        return vac_parameters
         
     def build_dict(self):
         para_dict = {}
@@ -88,7 +95,7 @@ class InputLayer(BaseLayer):
         input_nodes = self.input_node_list
         vol_sources = self.vdc_parameters
         for i, (node, source) in enumerate(zip(input_nodes, vol_sources)):
-            line = f"VSOURCE{i+1} {node} 0 {source}\n"
+            line = f"VSOURCE{i+1} {node} 0 DC VAC_BIAS AC {source} SIN (0 {self.freq})\n"
             lines.append(line)
             #self.add_parameter(source) 
         return lines
@@ -152,7 +159,7 @@ class NonLinearLayer(BaseLayer):
         for i, (in_node, out_node) in enumerate(zip(in_nodes, out_nodes)):
             in_node_int = int(in_node.split("_")[-1])
             out_node_int = int(out_node.split("_")[-1])
-            line = f"XI{layer}{in_node_int}{out_node_int} {in_node} {out_node} NEURON\n"
+            line = f"XI{layer}{in_node_int}{out_node_int} {in_node} {out_node} AMPLIFICATION_SS\n"
             lines.append(line)
         return lines
           
@@ -327,11 +334,10 @@ class DenseLayer(BaseLayer):
         return self.W
     
     #Update the weight matrix
-    def update_W(self):
+    def update_W(self, free_vol_matrix_diff, nudge_vol_matrix_diff):
         beta = self.beta
         gamma = self.gamma
         
-        free_vol_matrix_diff, nudge_vol_matrix_diff = self.calc_vol_difference()
         deltaG = gamma/beta * (np.square(nudge_vol_matrix_diff) - np.square(free_vol_matrix_diff)) * 1/self.lr
         W = self.W + deltaG
         #clipped_W = np.clip(W, 10e-7, None)
@@ -376,7 +382,7 @@ class DenseLayer(BaseLayer):
         
         
         free_vol_matrix_diff = np.empty((len(f_input_volt_arr),len(f_output_volt_arr)))
-        
+        #So here the difference between the first input and the second output is stored in the element 1x2!
         for i in range(len(f_input_volt_arr)):
             for j in range(len(f_output_volt_arr)):
                 free_vol_matrix_diff[i,j] = f_input_volt_arr[i] - f_output_volt_arr[j]
@@ -413,24 +419,25 @@ class DenseLayer(BaseLayer):
             
     def run_update_process(self):
         # Step 1: Update voltage differences
-        self.calc_vol_difference()
+        free_vol_matrix_diff, nudge_vol_matrix_diff = self.calc_vol_difference()
         
         # Step 2: Update weights
-        self.update_W()
+        self.W = self.update_W(free_vol_matrix_diff, nudge_vol_matrix_diff)
         
-        # Step 3: Update resistor dictionary
-        self.update_res_dict()
     
-        return self.update_res_dict()
+        return self.W
     
 class OutputLayer(BaseLayer):
     
     
-    def __init__(self, n_of_nodes, which_layer):
+    def __init__(self, n_of_nodes, freq, which_layer):
         # Initialize the parent class (BaseLayer)
         super().__init__(n_of_nodes, n_of_nodes, which_layer)
 
         # Call the methods to generate and assign attributes
+
+        self.freq = freq
+
 
         self.input_node_list = self.generate_node_names()
         self.output_node_list = ['0'] * len(self.input_node_list)
@@ -473,7 +480,7 @@ class OutputLayer(BaseLayer):
     def build_connections(self):
         lines= []
         for i, (current_source, node_name) in enumerate(zip(self.current_sources, self.input_node_list)):
-            line = f"{current_source} {node_name} 0 INUDGE_{i+1}\n"
+            line = f"{current_source} {node_name} 0 DC 0 AC INUDGE_{i+1} SIN (0 {self.freq})\n"
             lines.append(line)
         return lines
     

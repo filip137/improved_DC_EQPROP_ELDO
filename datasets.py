@@ -41,18 +41,20 @@ def generate_biased_inputs(X, Y, scale_factor):
     X_in = np.hstack((X_scaled, X_bias))
     return X_in, Y_scaled
 
-def generate_pos_neg_inputs(X, Y, scale_factor):
+def generate_pos_neg_inputs(X, Y, scale_factor , output_scale = 1):
     X_pos =  X * scale_factor 
     X_neg = -X * scale_factor
     X_in = np.hstack((X_pos, X_neg))
+    Y = Y * output_scale
     return X_in, Y    
 
-def generate_biased_pos_neg_inputs(X, Y, scale_factor):
+def generate_biased_pos_neg_inputs(X, Y, scale_factor, output_scale = 1):
     X_pos =  X * scale_factor 
     X_neg = -X * scale_factor
     X_bias_pos = scale_factor * (1-X_pos)
     X_bias_neg = scale_factor * (1-X_neg)
     X_in = np.hstack((X_pos, X_neg, X_bias_pos, X_bias_neg))
+    Y = Y * output_scale
     return X_in, Y    
 
 

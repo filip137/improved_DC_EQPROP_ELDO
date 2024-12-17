@@ -10,9 +10,18 @@ import sys
 
 
 
+def extract_all_nodes_voltages(layers):
+    all_node_voltages = []
+    for layer in layers:
+        if layer.type == 'resistive':
+            in_node = layer.input_node_list
+            out_node = layer.output_node_list
+            all_node_voltages.extend(in_node)
+            all_node_voltages.extend(out_node)
+    
+    return all_node_voltages
 
-
-def parse_aex_file(filename, start_index, end_index):
+def parse_aex_file(filename, start_index, end_index, simulation_type = "AC"):
     # Dictionary to store extracted data
     parsed_data = {}
 
@@ -30,14 +39,29 @@ def parse_aex_file(filename, start_index, end_index):
                 continue
 
             # Identify lines with the format *V(...)
-            if stripped_line.startswith("*V("):
-                # Extract node name and value using regex
-                parts = stripped_line.split()
-                node_name = parts[0][3:-1]
-                node_value = float(parts[2])
-                parsed_data[node_name] = node_value
-            if current_index >= end_index:
-                break
+            if simulation_type == "DC":
+                if stripped_line.startswith("*V("):
+                    # Extract node name and value using regex
+                    parts = stripped_line.split()
+                    node_name = parts[0][3:-1].strip("'\"")
+                    node_value = float(parts[2])
+                    parsed_data[node_name] = node_value
+                if current_index >= end_index:
+                    break
+
+            if simulation_type == "AC":
+                if stripped_line.startswith("*VR("):
+                    # Extract node name and value using regex
+                    parts = stripped_line.split()
+                    node_name = parts[0][4:-1].strip("'\"")
+                    node_value = float(parts[2])
+                    parsed_data[node_name] = node_value
+                if current_index >= end_index:
+                    break
+
+
+
+
 
     return parsed_data
 
@@ -99,6 +123,18 @@ def get_eldo_pids(eldo_identifier):
     except Exception as e:
         print(f"An error occurred: {e}")
         return []
+
+def clear_aex_file(file_path):
+    """
+    Deletes all lines in the specified .aex file.
+    
+    Parameters:
+        file_path (str): Path to the .aex file.
+    """
+    with open(file_path, 'w') as file:
+        pass  # Opening in 'w' mode clears the file
+
+
 
 
 def kill_process_PID(pids):

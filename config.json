@@ -2,14 +2,14 @@
   "initializer": {
     "init_type": "glorot",
     "params": {
-      "L": 1e-2,
-      "U": 1e-3,
-      "g_max": 1e-2,
-      "g_min": 1e-3
+      "L": 1e-4,
+      "U": 1e-7,
+      "g_max": 1e-4,
+      "g_min": 1e-7
     }
   },
   "layers": {
-    "fully_connected": [5, 16, 2],
+    "fully_connected": [4, 8, 2],
     "lower_cond_bound": 1e-6,
     "upper_cond_bound": 10.0
   },
@@ -17,13 +17,16 @@
     "VDIODE1": -0.5,
     "VDIODE2": 0.5
   },
+    "AC_biases": {
+      "source_dc_bias": 1.3
+    },
   "learning_rate_factors": {
     "lr_layer1": 1.0,
     "lr_layer2": 3.0
   },
   "gamma_values": {
-    "layer1": 0.03,
-    "layer2": 0.01
+    "layer1": 3,
+    "layer2": 1
   },
   "beta": 0.01,
   "amplification": {
@@ -32,7 +35,7 @@
   },
   "loss": {
     "type": "MSE",
-    "boundary": 0.5
+    "boundary": 0.001
   },
   "network": {
     "sample_file": "/home/filip/simulations/sample_files/eldo_samples/python_generated_netlists/my_network_netlist2.cir",
@@ -43,7 +46,7 @@
     "scale_factor": 3,
     "noise": 0,
     "bias": 1.5,
-    "num_samples": 3200,
+    "num_samples": 6400,
     "batch_size": 100
   }
 }
