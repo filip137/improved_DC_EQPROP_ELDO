@@ -159,7 +159,7 @@ class NonLinearLayer(BaseLayer):
         for i, (in_node, out_node) in enumerate(zip(in_nodes, out_nodes)):
             in_node_int = int(in_node.split("_")[-1])
             out_node_int = int(out_node.split("_")[-1])
-            line = f"XI{layer}{in_node_int}{out_node_int} {in_node} {out_node} AMPLIFICATION_SS\n"
+            line = f"XI{layer}{in_node_int}{out_node_int} {in_node} {out_node} NEURON\n"
             lines.append(line)
         return lines
           
@@ -341,8 +341,6 @@ class DenseLayer(BaseLayer):
         deltaG = gamma/beta * (np.square(nudge_vol_matrix_diff) - np.square(free_vol_matrix_diff)) * 1/self.lr
         W = self.W + deltaG
         #clipped_W = np.clip(W, 10e-7, None)
-        lower_cond_bound = 0
-        upper_cond_bound = 10
         clipped_W = np.clip(W, float(self.lower_cond_bound), float(self.upper_cond_bound))
         self.W = clipped_W
         return self.W

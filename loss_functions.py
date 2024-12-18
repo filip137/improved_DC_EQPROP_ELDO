@@ -17,9 +17,25 @@ class MSE:
         Calculate losses and gradient currents according to the
         Mean Squared Error (MSE)
         """
-        output_node_voltages_values = np.array(list(output_node_voltages.values()))  # Convert dict values to NumPy array
-        output_nodes_voltages = output_node_voltages_values.reshape(-1, 2)  # Reshape into a (rows, 2) array
-        prediction = output_nodes_voltages[:,0] - output_nodes_voltages[:,1]
+        """
+        Calculate losses and gradient currents according to the
+        Mean Squared Error (MSE).
+        Handles both dict and list input formats for output_node_voltages.
+        """
+        # Check if output_node_voltages is a dictionary
+        if isinstance(output_node_voltages, dict):
+            # Convert dict values to a NumPy array
+            output_node_voltages_values = np.array(list(output_node_voltages.values()))
+        elif isinstance(output_node_voltages, list):
+            # Convert the list to a NumPy array directly
+            output_node_voltages_values = np.array(output_node_voltages)
+        else:
+            raise ValueError("output_node_voltages must be either a dictionary or a list.")
+        
+        # Reshape into a (rows, 2) array
+        output_nodes_voltages = output_node_voltages_values.reshape(-1, 2)
+        prediction = output_nodes_voltages[:, 0] - output_nodes_voltages[:, 1]
+
 
         if mode == 'train':
             num_output_nodes = output_nodes_voltages.shape[0]
@@ -36,12 +52,17 @@ class MSE:
             currents[:,1] = beta * diff
             return losses, currents
 
-        return prediction.reshape(1, -1)
+        return prediction.reshape(-1, 1)
 
     def verify_result(self, target, prediction):
         #c = np.product(np.equal(target, np.round(prediction, 0)), axis=1)
-        c = np.product(np.equal(target>=self.boundary, prediction>=self.boundary), axis=1)
+        c = np.product(np.equal(target, prediction>=self.boundary), axis=1)
         return c
+    
+    
+    def binary_prediction(self, prediction):
+        return (prediction >= self.boundary).astype(int)
+
 
 class BCE:
     def __call__(self, output_node_voltages, target=None, beta=None, mode='train'):

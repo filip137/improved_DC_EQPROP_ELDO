@@ -19,8 +19,35 @@ import pandas as pd
 from sklearn.datasets import make_moons
 from sklearn.model_selection import train_test_split
 
+def plot_moons_data(X, Y):
+    """
+    Plots the moons dataset using only the first two values of each X[i].
 
-
+    Parameters:
+        X (array-like): Input data array with shape (n_samples, n_features).
+        Y (array-like): Labels array with shape (n_samples,).
+    """
+    # Extract the first and second values from each X[i]
+    X_first_two = X[:, :2]
+    
+    # Split the data by class for better visualization
+    pos_indices = (Y == 1).flatten()
+    neg_indices = (Y == 0).flatten()
+    
+    plt.figure(figsize=(8, 6))
+    # Plot positive class
+    plt.scatter(X_first_two[:,0][pos_indices], X_first_two[:,1][pos_indices],
+                color='blue', label='Positive Class (1)', alpha=0.7)
+    # Plot negative class
+    plt.scatter(X_first_two[:,0][neg_indices], X_first_two[:,1][neg_indices],
+                color='red', label='Negative Class (0)', alpha=0.7)
+    
+    plt.title('Moons Dataset Visualization (First Two Features)')
+    plt.xlabel('X[0]')
+    plt.ylabel('X[1]')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
 
 def prepare_moons_data(n_samples, noise=0.1, random_state=42):
     # Generate the moons dataset
@@ -45,7 +72,7 @@ def generate_pos_neg_inputs(X, Y, scale_factor , output_scale = 1):
     X_pos =  X * scale_factor 
     X_neg = -X * scale_factor
     X_in = np.hstack((X_pos, X_neg))
-    Y = Y * output_scale
+    Y = Y
     return X_in, Y    
 
 def generate_biased_pos_neg_inputs(X, Y, scale_factor, output_scale = 1):
