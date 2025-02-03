@@ -31,16 +31,17 @@ def plot_moons_data(X, Y):
     X_first_two = X[:, :2]
     
     # Split the data by class for better visualization
-    pos_indices = (Y == 1).flatten()
-    neg_indices = (Y == 0).flatten()
-    
+    pos_indices = (Y > 0).flatten()
+    neg_indices = (Y <= 0).flatten()
+    poss = max(Y)
+    negg = min(Y)
     plt.figure(figsize=(8, 6))
     # Plot positive class
     plt.scatter(X_first_two[:,0][pos_indices], X_first_two[:,1][pos_indices],
-                color='blue', label='Positive Class (1)', alpha=0.7)
+                color='blue', label=f'Positive Class {poss}', alpha=0.7)
     # Plot negative class
     plt.scatter(X_first_two[:,0][neg_indices], X_first_two[:,1][neg_indices],
-                color='red', label='Negative Class (0)', alpha=0.7)
+                color='red', label=f'Negative Class {negg}', alpha=0.7)
     
     plt.title('Moons Dataset Visualization (First Two Features)')
     plt.xlabel('X[0]')
@@ -49,18 +50,34 @@ def plot_moons_data(X, Y):
     plt.grid(True)
     plt.show()
 
+def prepare_moons_data_neg_output(n_samples, noise=0.1, random_state=42):
+    # Generate the moons dataset
+    X, Y = make_moons(n_samples=n_samples, noise=noise, random_state=random_state)
+    
+    # Center X so that each feature has mean ~ 0
+    X_centered = X - np.mean(X, axis=0)
+    
+    # Convert Y from {0, 1} to {-1, 1}
+    Y_mapped = 2 * Y - 1  # 0 -> -1,  1 -> +1
+    
+    # Convert Y to a column vector
+    Y_column = Y_mapped.reshape(-1, 1)
+    
+    return X_centered, Y_column
+
+ 
 def prepare_moons_data(n_samples, noise=0.1, random_state=42):
     # Generate the moons dataset
     X, Y = make_moons(n_samples=n_samples, noise=noise, random_state=random_state)
-    Y_column = Y.reshape(-1,1)
-    # Split the data: 60% for training, 40% for validation and test
-    #X_train, X_temp, Y_train, Y_temp = train_test_split(X, Y, test_size=0.4, random_state=random_state)
     
-    # Split the remaining 40%: 20% for validation, 20% for test
-    #X_val, X_test, Y_val, Y_test = train_test_split(X_temp, Y_temp, test_size=0.5, random_state=random_state)
-    return X, Y_column
+    # Center X so that each feature has mean ~ 0
+    X_centered = X - np.mean(X, axis=0)
+    
 
     
+    return X_centered, Y
+
+   
 def generate_biased_inputs(X, Y, scale_factor):
     X_scaled = scale_factor * X
     Y_scaled =  Y
@@ -74,6 +91,20 @@ def generate_pos_neg_inputs(X, Y, scale_factor , output_scale = 1):
     X_in = np.hstack((X_pos, X_neg))
     Y = Y
     return X_in, Y    
+
+
+def generate_2_bias_pos_neg_inputs(X, Y, scale_factor, bias, output_scale = 1):
+    X_pos =  X * scale_factor 
+    X_neg = -X * scale_factor
+    X_bias_pos = bias*np.ones((X_pos.shape[0],1))
+    X_bias_neg = -bias*np.ones((X_pos.shape[0],1))
+    X_in = np.hstack((X_pos, X_neg, X_bias_pos, X_bias_neg))
+    Y = Y * output_scale
+    return X_in, Y   
+
+
+
+
 
 def generate_biased_pos_neg_inputs(X, Y, scale_factor, output_scale = 1):
     X_pos =  X * scale_factor 
@@ -95,13 +126,6 @@ def generate_const_biased_pos_neg_inputs(X, Y, scale_factor, bias):
     X_in = np.hstack((X_pos, X_neg, X_bias_pos, X_bias_neg))
     return X_in, Y    
 
-def generate_1_bias_pos_neg_inputs(X, Y, scale_factor, bias, output_scale = 1):
-    X_pos =  X * scale_factor 
-    X_neg = -X * scale_factor
-    X_bias = bias*np.ones((X_pos.shape[0],1))
-    X_in = np.hstack((X_pos, X_neg, X_bias))
-    Y = Y * output_scale
-    return X_in, Y   
 
 
 

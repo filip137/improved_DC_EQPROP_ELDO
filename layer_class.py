@@ -37,14 +37,14 @@ class BaseLayer:
 #I create different kinds of layers and in each one I store the parameters in a dictionary which contains keys and values. I can then easily gather all the keys to generate the netlist
 
 class InputLayer(BaseLayer):
-    def __init__(self, n_of_nodes, vdc_bias, freq, which_layer=0, trainable=False):
+    def __init__(self, n_of_nodes, vdc_bias, freq, which_layer=0, bias_ = True, trainable=False):
         # Initialize the parent class (BaseLayer) with the same number of inputs and outputs
         super().__init__(n_of_nodes, n_of_nodes, which_layer=which_layer, trainable=trainable)
         
         
         self.vdc_bias = vdc_bias
         self.freq = freq
-        
+        self.bias_ = bias_
         
         self.inputs = {}
         # The number of inputs will now equal the number of outputs (n_of_nodes)
@@ -79,39 +79,44 @@ class InputLayer(BaseLayer):
             v_ac = f"VAC{i}"
             self.inputs[v_ac] = 0
             vac_parameters.append(v_ac)
-        #VDC bias at each voltage source
-        #vac_parameters.append("VAC_BIAS")
-        vac_parameters.append("VBIAS")
+        vac_parameters.append("VDC_BIAS")
         return vac_parameters
         
     def build_dict(self):
         para_dict = {}
         for variable in self.vdc_parameters:
             para_dict[variable] = 0
+        para_dict['VDC_BIAS'] = self.vdc_bias
         return para_dict
+    
     
     def build_connections(self):
         lines = []
         input_nodes = self.input_node_list
         vol_sources = self.vdc_parameters
+        freq = self.freq
         for i, (node, source) in enumerate(zip(input_nodes, vol_sources)):
-            line = f"VSOURCE{i+1} {node} 0 DC VAC_BIAS AC {source} SIN (0 {self.freq})\n"
+            line = f"VSOURCE{i+1} {node} 0 DC VDC_BIAS AC 100m 0 SIN (VDC_BIAS {source} {freq})\n"
             lines.append(line)
             #self.add_parameter(source) 
         return lines
         
+        
 class NonLinearLayer(BaseLayer):
     
-    def __init__(self, n_of_nodes, which_layer, diode_dict):
+    def __init__(self, n_of_nodes, which_layer, nonlin_parameters, neuron_type):
         # Initialize the parent class (BaseLayer) with the same number of inputs and outputs
         super().__init__(n_of_nodes, n_of_nodes, which_layer)
 
         # Call the methods to generate and assign attributes
         self.input_node_list = self.build_input_nodes()
         self.output_node_list = self.build_output_nodes()
+        self.neuron = neuron_type
 
-        self.parameters = diode_dict
+        self.parameters = nonlin_parameters
         self.connections = self.build_connections()
+        
+        
         
     def build_input_nodes(self):
         input_node_list = []
@@ -146,10 +151,7 @@ class NonLinearLayer(BaseLayer):
             
     
     #def init_non_lin(self):
-        
-        
-        
-        
+    
     
     def build_connections(self):
         lines = []
@@ -159,7 +161,7 @@ class NonLinearLayer(BaseLayer):
         for i, (in_node, out_node) in enumerate(zip(in_nodes, out_nodes)):
             in_node_int = int(in_node.split("_")[-1])
             out_node_int = int(out_node.split("_")[-1])
-            line = f"XI{layer}{in_node_int}{out_node_int} {in_node} {out_node} NEURON\n"
+            line = f"XI{layer}{in_node_int}{out_node_int} {in_node} {out_node} {self.neuron}\n"
             lines.append(line)
         return lines
           
@@ -280,7 +282,7 @@ class DenseLayer(BaseLayer):
         
         return output_node_list     
   
-    #I am worried that this will become very slow, so I will replace it by the matrix - I will still keep the resistor dict because it is useful to initialize the network
+    # #I am worried that this will become very slow, so I will replace it by the matrix - I will still keep the resistor dict because it is useful to initialize the network
     def build_resistor_dict(self):
         
         resistor_dict = {}
@@ -334,11 +336,13 @@ class DenseLayer(BaseLayer):
         return self.W
     
     #Update the weight matrix
-    def update_W(self, free_vol_matrix_diff, nudge_vol_matrix_diff):
+    def update_W(self, free_vol_matrix_diff, nudge_vol_matrix_diff, mode):
         beta = self.beta
         gamma = self.gamma
-        
         deltaG = gamma/beta * (np.square(nudge_vol_matrix_diff) - np.square(free_vol_matrix_diff)) * 1/self.lr
+        if mode == "discrete":
+            step_size = 1e-6
+            deltaG = np.clip(deltaG, -step_size, step_size)
         W = self.W + deltaG
         #clipped_W = np.clip(W, 10e-7, None)
         clipped_W = np.clip(W, float(self.lower_cond_bound), float(self.upper_cond_bound))
@@ -415,12 +419,12 @@ class DenseLayer(BaseLayer):
             
             
             
-    def run_update_process(self):
+    def run_update_process(self, mode):
         # Step 1: Update voltage differences
         free_vol_matrix_diff, nudge_vol_matrix_diff = self.calc_vol_difference()
         
         # Step 2: Update weights
-        self.W = self.update_W(free_vol_matrix_diff, nudge_vol_matrix_diff)
+        self.W = self.update_W(free_vol_matrix_diff, nudge_vol_matrix_diff, mode)
         
     
         return self.W
@@ -478,7 +482,7 @@ class OutputLayer(BaseLayer):
     def build_connections(self):
         lines= []
         for i, (current_source, node_name) in enumerate(zip(self.current_sources, self.input_node_list)):
-            line = f"{current_source} {node_name} 0 DC 0 AC INUDGE_{i+1} SIN (0 {self.freq})\n"
+            line = f"{current_source} {node_name} 0 DC 0 SIN (0 INUDGE_{i+1} {self.freq})\n"
             lines.append(line)
         return lines
     

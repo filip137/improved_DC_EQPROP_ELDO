@@ -79,6 +79,62 @@ def plot_weight_matrix_evolution_lines(weight_matrices, interval, title):
     plt.tight_layout()
     plt.show()  
 
+
+def plot_weight_matrix_evolution_separate(
+    weight_matrices,
+    interval,
+    title,
+    num_random_weights=4,
+    random_seed=None
+):
+    """
+    Plots the evolution of weights in the matrices over iterations,
+    with each weight in a separate graph, but only for a random subset.
+
+    Parameters:
+        weight_matrices (list of 2D arrays): List of weight matrices (one for each iteration).
+        interval (int): Interval of iterations to plot (default is 1, plots all iterations).
+        title (str): Title prefix for each plot.
+        num_random_weights (int): Number of random weights to plot.
+        random_seed (int or None): If provided, sets a random seed for reproducibility.
+    """
+
+    # Optional: set a random seed for reproducibility
+    if random_seed is not None:
+        np.random.seed(random_seed)
+
+    # Convert the list of matrices into a 3D NumPy array (iterations, rows, cols)
+    weight_matrices_array = np.array(weight_matrices)
+    num_iterations, num_rows, num_cols = weight_matrices_array.shape
+
+    # Flatten each weight matrix to track individual weights
+    flattened_weights = weight_matrices_array.reshape(num_iterations, -1)
+    num_weights = flattened_weights.shape[1]
+
+    # Downsample iterations based on the interval
+    x = np.arange(0, num_iterations, interval)
+    sampled_weights = flattened_weights[x]
+
+    # --- NEW: Select a random subset of weights ---
+    # We only choose num_random_weights distinct indices
+    # If num_random_weights > num_weights, we'll plot all weights
+    num_random_weights = min(num_random_weights, num_weights)
+    random_weight_indices = np.random.choice(num_weights, size=num_random_weights, replace=False)
+    
+    # Create a separate graph for each randomly chosen weight
+    for i, weight_idx in enumerate(random_weight_indices, start=1):
+        plt.figure(figsize=(8, 6))
+        plt.plot(x, sampled_weights[:, weight_idx], label=f'Weight {weight_idx+1}', alpha=0.8)
+        plt.yscale('log')  # Log scale for the y-axis if needed
+        plt.title(f"{title} - Random Weight {i} (Index {weight_idx+1})")
+        plt.xlabel("Iteration")
+        plt.ylabel("Weight Value")
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+
+
+
 def plot_free_and_nudged(output_list, output_list_nudge, output_nodes, beta, gamma):
     """
     Plots free and nudged results for each output node over iterations.
@@ -134,3 +190,20 @@ def plot_free_and_nudged(output_list, output_list_nudge, output_nodes, beta, gam
 
         # Show plot
         plt.show()
+
+
+def plot_loss(loss_list):
+    """
+    Plots the training loss over iterations.
+    
+    Parameters:
+        loss_list (list or array-like): A list containing the loss value at each iteration.
+    """
+    plt.figure(figsize=(8, 5))
+    plt.plot(loss_list, label='Training Loss', color='blue')
+    plt.xlabel('Iteration')
+    plt.ylabel('Loss')
+    plt.title('Training Loss Over Iterations')
+    plt.legend()
+    plt.grid(True)
+    plt.show()

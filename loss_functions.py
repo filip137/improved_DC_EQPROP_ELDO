@@ -9,7 +9,7 @@ import numpy as np
 #######################################################################
 
 class MSE:
-    def __init__(self, boundary=0):
+    def __init__(self, boundary):
         self.boundary = boundary
 
     def __call__(self, output_node_voltages, target=None, beta=None, mode='train'):
@@ -55,8 +55,8 @@ class MSE:
         return prediction.reshape(-1, 1)
 
     def verify_result(self, target, prediction):
-        #c = np.product(np.equal(target, np.round(prediction, 0)), axis=1)
-        c = np.product(np.equal(target, prediction>=self.boundary), axis=1)
+        target_2d = target.reshape(-1, 1)  # shape (N,1)        #c = np.product(np.equal(target, np.round(prediction, 0)), axis=1)
+        c = np.product(np.equal(target_2d, prediction>=self.boundary), axis=1)
         return c
     
     

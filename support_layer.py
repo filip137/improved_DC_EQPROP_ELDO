@@ -7,6 +7,58 @@ import re
 import signal
 import os
 import sys
+import datetime
+
+def generate_filename(base_path, extension=".cir", identifier=None):
+    """
+    Generate a filename or folder path with a datetime stamp or a custom identifier.
+    
+    Args:
+        base_path (str): The base path or initial part of the file name.
+        extension (str): File extension (use None if you don't want an extension).
+        identifier (str): Optional custom identifier to append to the file name.
+    
+    Returns:
+        str: The generated path or filename with a datetime stamp or identifier.
+    """
+    now = datetime.datetime.now()
+    datetime_stamp = now.strftime("%Y%m%d_%H%M%S")
+    
+    if extension is None:
+        extension = ""  # If extension is None, use an empty string
+    
+    if identifier:
+        path = f"{base_path}_{identifier}{extension}"
+    else:
+        path = f"{base_path}_{datetime_stamp}{extension}"
+    
+    return path
+
+
+def create_filenames(network_config):
+    """
+    Creates a new subfolder in the output directory, generates circuit filenames,
+    and returns the full paths for the .cir and .aex files.
+    """
+    # Step 1: Create a new subfolder
+    subfolder_name = generate_filename("my_experiment", extension=None)
+    full_subfolder_path = os.path.join(network_config["output_dir"], subfolder_name)
+    os.makedirs(full_subfolder_path, exist_ok=True)
+    
+    # Step 2: Extract base name from sample_file
+    base_sample_file = os.path.basename(network_config["sample_file"])
+    base_sample_name, _ = os.path.splitext(base_sample_file)
+    
+    # Step 3: Generate filenames
+    cir_filename = generate_filename(base_sample_name, extension=".cir")
+    aex_filename = generate_filename(base_sample_name, extension=".aex")
+    
+    # Step 4: Construct full paths
+    new_sample_file = os.path.join(full_subfolder_path, cir_filename)
+    aex_file_path = os.path.join(full_subfolder_path, aex_filename)
+    
+    return full_subfolder_path, new_sample_file, aex_file_path
+
 
 
 
@@ -58,10 +110,78 @@ def parse_aex_file(filename, start_index, end_index, simulation_type = "AC"):
                     parsed_data[node_name] = node_value
                 if current_index >= end_index:
                     break
+                
+                
+            elif simulation_type == "FSST":
+                if stripped_line.startswith("*YVAL("):
+                    parts = stripped_line.split()
+                    # parts[0] is something like "*YVAL(V(V_OUT_0_1),10MEG)"
+
+                    # Use a local string variable instead of `signal`:
+                    signal_str = parts[0]
+                    start_idx = signal_str.find('V(') + 2  # position after 'V('
+                    end_idx = signal_str.find(')', start_idx)
+                    node_name = signal_str[start_idx:end_idx].split(',')[0]
+                    # For simplicity, treat parts[-1] as the real value
+                    node_value = float(parts[-1])
+                    parsed_data[node_name] = node_value
+
+                if current_index >= end_index:
+                    break
 
 
 
 
+    return parsed_data
+
+
+
+def parse_aex_file_no_end(filename, start_index, simulation_type="AC"):
+    # Dictionary to store extracted data
+    parsed_data = {}
+
+    # Open the file and process line by line
+    current_index = 0
+    with open(filename, 'r') as file:
+        for line in file:
+            current_index += 1
+
+            # Skip lines until we reach the starting index
+            if current_index < start_index:
+                continue
+
+            stripped_line = line.strip()
+
+            # Break out of the loop if a blank line is encountered
+            if stripped_line == "":
+                break
+
+            # Process the line based on the simulation type
+            if simulation_type == "DC":
+                if stripped_line.startswith("*V("):
+                    parts = stripped_line.split()
+                    # Extract node name and value
+                    node_name = parts[0][3:-1].strip("'\"")
+                    node_value = float(parts[2])
+                    parsed_data[node_name] = node_value
+
+            elif simulation_type == "AC":
+                if stripped_line.startswith("*VR("):
+                    parts = stripped_line.split()
+                    node_name = parts[0][4:-1].strip("'\"")
+                    node_value = float(parts[2])
+                    parsed_data[node_name] = node_value
+
+            elif simulation_type == "FSST":
+                if stripped_line.startswith("*YVAL("):
+                    parts = stripped_line.split()
+                    # Example: "*YVAL(V(V_OUT_0_1),10MEG)"
+                    signal_str = parts[0]
+                    start_idx = signal_str.find('V(') + 2  # position after 'V('
+                    end_idx = signal_str.find(')', start_idx)
+                    node_name = signal_str[start_idx:end_idx].split(',')[0]
+                    node_value = float(parts[-1])
+                    parsed_data[node_name] = node_value
 
     return parsed_data
 
@@ -135,6 +255,19 @@ def clear_aex_file(file_path):
         pass  # Opening in 'w' mode clears the file
 
 
+def truncate__aex_file(file_path, keep_size=0):
+    """
+    Truncates the file to `keep_size` bytes from the beginning.
+    By default, it truncates to 0 (fully clearing it) but leaves it valid.
+    """
+    with open(file_path, 'r+') as f:
+        # Optionally read or process the current data
+        # e.g. data = f.read()
+        
+        # Move pointer back to start of file
+        f.seek(10)
+        # Truncate the file to 'keep_size' bytes
+        f.truncate()
 
 
 def kill_process_PID(pids):
