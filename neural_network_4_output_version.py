@@ -5,7 +5,10 @@ import numpy as np
 import time
 from support_layer import *
 from eldo_support_functions import *
+from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import MinMaxScaler
 from loss_functions import * 
+from sklearn.datasets import load_wine
 from sklearn.model_selection import train_test_split
 from datetime import datetime
 import signal
@@ -234,7 +237,7 @@ class MyNetwork:
                 for j, key in enumerate(input_keys_list):
                     input_dict[key] = X[j]  # Directly assign the value from X to the corresponding key
                     
-                    
+                beta_r = beta * np.random.randint(0, 100) 
                 set_input_voltages(eldo_process, input_dict, debug)
                 #move at the end
                 disable_current_sources(eldo_process, inudge_dict, debug)
@@ -258,13 +261,16 @@ class MyNetwork:
                 volt_extract_end = time.time() - volt_extract
                 #print(f"Voltage extraction {volt_extract_end}")
                 outputs = layer.output_free_voltages #the outputs are just the outputs of the last layer
-                output_values = list(outputs.values())
+                output_values = np.array(list(outputs.values()))
                 output_list.append(output_values)
-                if Y == 0:
-                    target = -0.2
-                if Y == 1:
-                    target = 0.2
-                sample_losses, currents = loss_fn(outputs, target, beta = beta, mode='train') #need to decide where to initialize this function - remember that loss_fn comes from the already initialized MSE
+                
+                mode = "train"
+                target = (2 * Y - 1) * self.boundary
+                sample_losses, currents = loss_fn(outputs, target, beta_r, mode)#need to decide where to initialize this function - remember that loss_fn comes from the already initialized MSE
+                #predicted value
+                mode = 'test' 
+                pred_free = loss_fn(outputs, target, beta_r, mode)
+                
                 #now I can simply zip the currents to the parameters of the last layer and repeat
                 flat_currents = currents.flatten()
 
@@ -328,8 +334,8 @@ class MyNetwork:
             #res_duration = time.time() - res_start_time                
             #batch_duration = time.time() - batch_start_time
             
-            prediction = loss_fn(output_list[batch_size*i:(batch_size+batch_size*i)], mode='test')
-            prediction_list.extend(prediction)
+            #prediction = loss_fn(output_list[batch_size*i:(batch_size+batch_size*i)], mode='test')
+            #prediction_list.extend(prediction)
             truncate__aex_file(aex_result_file, 10)
             #clear_aex_file(aex_result_file)
 
@@ -339,7 +345,7 @@ class MyNetwork:
         predictions = loss_fn(output_list, mode='test')
         epoch_acc = np.mean(loss_fn.verify_result(Y_train, np.array(predictions)))
         print(f"Accuracy after epoch {epoch_acc}")
-        output_nodes = [0,1]
+        output_nodes = [0,1,2,3, 4, 5]
         plot_free_and_nudged(output_list, output_list_nudge, output_nodes, beta = None, gamma = None)
         plot_weight_matrix_evolution_lines(weight_matrices_1, interval=10, title = "First weight matrix")    
         plot_weight_matrix_evolution_lines(weight_matrices_2, interval = 10,title = "Second weight matrix")  
@@ -445,7 +451,9 @@ class MyNetwork:
     # Create a meshgrid from the grid points
         xx, yy = np.meshgrid(x1grid, x2grid)
         grid = np.c_[xx.ravel(), yy.ravel()]
-    
+        
+        
+        Y_indices = np.argmax(Y_val, axis=1) 
     # Make predictions for the grid
         X_bias = X_val[0,-1]
         draw_grid = True
@@ -460,10 +468,10 @@ class MyNetwork:
         cbar = plt.colorbar(contour)
         cbar.set_ticks([0, 1])
         cbar.set_ticklabels(['Class 0', 'Class 1'])
-        Y_val = Y_val.ravel()
+        Y_val = Y_indices.ravel()
     # Separate the points by class
-        class0 = X_val[Y_val == 0]
-        class1 = X_val[Y_val == 1]
+        class0 = X_val[Y_indices == 0]
+        class1 = X_val[Y_indices == 1]
     
     # Scatter plot for the validation set with legend
         plt.scatter(class0[:, 0], class0[:, 1], c='blue', edgecolor='k', marker='o', s=20, label='Class 0')
@@ -557,10 +565,7 @@ def initialize_network_layers(simulation_details, network_details):
     
     
     init_config = simulation_details["initializer"]
-    init_config = simulation_details["initializer"]
     fc_layers = simulation_details["layers"]["fully_connected"]
-    fc_layers = [2,3,2]
-
     lower_cond_bound = simulation_details["layers"]["lower_cond_bound"]
     upper_cond_bound = simulation_details["layers"]["upper_cond_bound"]
     
@@ -585,7 +590,10 @@ def initialize_network_layers(simulation_details, network_details):
     
     
     synapse = "resistive"
-    weight_initializer = Initializer(init_type=init_config["init_type"], params=init_config["params"])
+    iparams = init_config["init_type"]
+    wparams = init_config["params"]
+    weight_initializer = Initializer(iparams, wparams)
+    print(f"Doing simulations for {wparams}")
     layers = []
     
     
@@ -730,9 +738,10 @@ def main(): #probably objective function
     # Decide the loss function
     boundary = simulation_details["loss"]["boundary"]
 
-    bias = 0.2
-    scale_factor = 0.45
-    bsize_arr = [8,16,32]
+    bias = 0
+    scale_factor = 1
+    bsize_arr = [1]
+    boundary = 0.1
     for batch_size in bsize_arr:
         loss_fn = MSE(boundary)
         
@@ -745,45 +754,52 @@ def main(): #probably objective function
         net.build_netlist(new_sample_file, all_nodes)
          
          
-        #Start a simulation
-        num_samples = 1600
-        X_t, Y_t = prepare_moons_data(num_samples, noise = 0.10, random_state=4)
-        X, Y = generate_2_bias_pos_neg_inputs(X_t, Y_t, scale_factor, bias, output_scale = 1)
-        plot_moons_data(X[:,:2], Y)
-        X_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=0.2, random_state=4)
+        num_samples = 800  # (if needed elsewhere; not used directly here)
+        
+        # Load and center the wine dataset
+        X_t, Y_t = prepare_simple_dataset(num_samples)
+        
+        # Scale the features using StandardScaler
+        #scaler = StandardScaler()
+        #scaler = MinMaxScaler(feature_range=(-0.7, 0.7))
+        #X_t_scaled = scaler.fit_transform(X_t)
+        
+        # Process the scaled wine data with onehot_pos_neg_inputs.
+        # Note: scale_factor, bias, and output_scale should be defined previously.
+        #X, Y = onehot_pos_neg_inputs(X_t_scaled, Y_t, scale_factor, bias, output_scale=1)
+        
+        # Optionally, you can visualize the data here (if needed)
+        # plot_moons_data(X[:, :2], Y)  # Adjust function name if necessary
+        
+        # Split the processed data into training and test sets.
+        #from sklearn.model_selection import train_test_split
+        X_train, X_test, y_train, y_test = train_test_split(X_t, Y_t, test_size=0.2, random_state=4)
         
         #vac+bias is the bias of the ac voltage source, vbias is the additional bias that is currently not used
         #bias_dict = {"VAC_BIAS" : v_ac_bias}
         
         #This does not work and it really should work
         pids = get_eldo_pids(eldo_identifier = 'eldo_64.exe')
-        eldo_process = start_eldo_simulation(new_sample_file, full_subfolder_path, m_thread = True, noascii =  True, debug=False )
+        eldo_process = start_eldo_simulation(new_sample_file, full_subfolder_path, m_thread = True, noascii =  True, debug=True )
         signal.signal(signal.SIGINT, lambda sig, frame: signal_handler(sig, frame, eldo_process))
         signal.signal(signal.SIGTERM, lambda sig, frame: signal_handler(sig, frame, eldo_process))
         
-        n_of_epochs = 20
+        n_of_epochs = 50
         epoch = 0
         #net.draw_grid(eldo_process, X_train, y_train, epoch, n_of_node_voltages, debug = False)
-    
         for epoch in range(1, n_of_epochs +1):
             #NEED TO MANUALLY SET THEM, INITIALLY EVERYTHING IS 0
             #set_input_voltages(eldo_process, bias_dict, debug = True)
-            print(f"Starting epoch {epoch} for boundary {boundary}")
+            print(f"Starting epoch {epoch} for boundary {boundary}, batch size {batch_size} and scale factor {scale_factor}")
             losses = net.free_nudged_train(eldo_process, layers, X_train, y_train, beta, epoch, batch_size, loss_fn, n_of_node_voltages, aex_file_path, optimizer = None, debug = False)
     
-            net.draw_grid(eldo_process, X_train, y_train, epoch, n_of_node_voltages, debug = False)
+            #net.draw_grid(eldo_process, X_train, y_train, epoch, n_of_node_voltages, debug = False)
             #accuracy = net.free_test(eldo_process, layers, X_test, y_test, epoch, loss_fn, metrics = None, debug = False)
             
-         
-         
-         
-     
-     
-     
-     
-     
+        delete_file_with_chi_extension(new_sample_file)
 
 
+        
     
 if __name__ == "__main__":
     main()

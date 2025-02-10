@@ -2,49 +2,73 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+
+import matplotlib.pyplot as plt
+
 def output_plot(data):
     """
-    Plots the first column, second column, and their difference from a list of dict_values.
+    Plots six columns from a list of dict_values, and their differences between columns 3 and 4, and columns 5 and 6.
 
     Parameters:
-        data (list): A list of dict_values objects containing two numerical values each.
+        data (list): A list of dict_values objects containing six numerical values each.
     """
     # Convert dict_values to a list of lists
     converted_data = [list(values) for values in data]
 
     # Extract columns
-    column1 = [row[0] for row in converted_data]  # First column
-    column2 = [row[1] for row in converted_data]  # Second column
+    columns = [[row[i] for row in converted_data] for i in range(6)]
 
-    # Calculate the difference
-    difference = [x - y for x, y in zip(column1, column2)]
+    # Calculate the differences
+    difference0 = [x - y for x, y in zip(columns[0], columns[1])]  # Difference between columns 3 and 4
 
-    # Plot the first column
+    difference1 = [x - y for x, y in zip(columns[2], columns[3])]  # Difference between columns 3 and 4
+    difference2 = [x - y for x, y in zip(columns[4], columns[5])]  # Difference between columns 5 and 6
+
+    # Create plots for each column
+    colors = ['blue', 'orange', 'green', 'red', 'purple', 'brown']
+    titles = ['Column 1', 'Column 2', 'Column 3', 'Column 4', 'Column 5', 'Column 6']
+    for i, (column, color, title) in enumerate(zip(columns, colors, titles)):
+        plt.figure()
+        plt.plot(column, label=title, marker='o', color=color)
+        plt.xlabel("Index")
+        plt.ylabel("Value")
+        plt.title(title)
+        plt.legend()
+        plt.show()
+
+
+
+
+    # Plot the differences
     plt.figure()
-    plt.plot(column1, label="Column 1", marker='o')
-    plt.xlabel("Index")
-    plt.ylabel("Value")
-    plt.title("Column 1")
-    plt.legend()
-    plt.show()
-
-    # Plot the second column
-    plt.figure()
-    plt.plot(column2, label="Column 2", marker='o', color='orange')
-    plt.xlabel("Index")
-    plt.ylabel("Value")
-    plt.title("Column 2")
-    plt.legend()
-    plt.show()
-
-    # Plot the difference
-    plt.figure()
-    plt.plot(difference, label="Difference (Column 1 - Column 2)", marker='o', color='green')
+    plt.plot(difference0, label="Difference (Column 1 - Column 2)", marker='o', color='black')
     plt.xlabel("Index")
     plt.ylabel("Difference")
     plt.title("Difference Between Column 1 and Column 2")
     plt.legend()
     plt.show()
+
+    # Plot the differences
+    plt.figure()
+    plt.plot(difference1, label="Difference (Column 3 - Column 4)", marker='o', color='black')
+    plt.xlabel("Index")
+    plt.ylabel("Difference")
+    plt.title("Difference Between Column 3 and Column 4")
+    plt.legend()
+    plt.show()
+
+    plt.figure()
+    plt.plot(difference2, label="Difference (Column 5 - Column 6)", marker='o', color='grey')
+    plt.xlabel("Index")
+    plt.ylabel("Difference")
+    plt.title("Difference Between Column 5 and Column 6")
+    plt.legend()
+    plt.show()
+
+# Example usage
+# data = [{values of 6 columns per dict_values}, ...]
+# output_plot(data)
+
 
 def plot_weight_matrix_evolution_lines(weight_matrices, interval, title):
     """
@@ -192,18 +216,22 @@ def plot_free_and_nudged(output_list, output_list_nudge, output_nodes, beta, gam
         plt.show()
 
 
-def plot_loss(loss_list):
+
+def plot_loss(loss_lists):
     """
-    Plots the training loss over iterations.
+    Plots the summed training loss over iterations when given multiple losses per iteration.
     
     Parameters:
-        loss_list (list or array-like): A list containing the loss value at each iteration.
+        loss_lists (list of lists or array-like): A list where each element is a list containing multiple loss values at each iteration.
     """
+    # Summing up the losses for each iteration
+    summed_losses = [sum(losses) for losses in loss_lists]
+
     plt.figure(figsize=(8, 5))
-    plt.plot(loss_list, label='Training Loss', color='blue')
+    plt.plot(summed_losses, label='Summed Training Loss', color='blue')
     plt.xlabel('Iteration')
     plt.ylabel('Loss')
-    plt.title('Training Loss Over Iterations')
+    plt.title('Summed Training Loss Over Iterations')
     plt.legend()
     plt.grid(True)
     plt.show()

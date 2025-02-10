@@ -135,6 +135,35 @@ def parse_aex_file(filename, start_index, end_index, simulation_type = "AC"):
     return parsed_data
 
 
+def delete_file_with_chi_extension(sample_file):
+    """
+    Given a filename ending with '.cir', this function replaces the extension with '.chi'
+    and deletes the resulting file.
+    
+    Parameters:
+        sample_file (str): The original filename with a '.cir' extension.
+                           Example: 'new_sample_file.cir'
+    """
+    # Split the filename into base and extension parts
+    base, ext = os.path.splitext(sample_file)
+    
+    # Check if the original file has the expected '.cir' extension
+    if ext.lower() != '.cir':
+        print(f"Warning: The input file does not have a '.cir' extension. Proceeding with replacement.")
+    
+    # Construct the new filename with the '.chi' extension
+    chi_file = base + '.chi'
+    
+    # Check if the file exists before attempting deletion
+    if os.path.exists(chi_file):
+        try:
+            os.remove(chi_file)
+            print(f"Deleted file: {chi_file}")
+        except Exception as e:
+            print(f"Error deleting {chi_file}: {e}")
+    else:
+        print(f"File {chi_file} does not exist.")
+
 
 def parse_aex_file_no_end(filename, start_index, simulation_type="AC"):
     # Dictionary to store extracted data

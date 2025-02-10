@@ -341,9 +341,9 @@ class DenseLayer(BaseLayer):
         gamma = self.gamma
         deltaG = gamma/beta * (np.square(nudge_vol_matrix_diff) - np.square(free_vol_matrix_diff)) * 1/self.lr
         if mode == "discrete":
-            step_size = 1e-6
+            step_size = 1e-7
             deltaG = np.clip(deltaG, -step_size, step_size)
-        W = self.W + deltaG
+        W = self.W - deltaG
         #clipped_W = np.clip(W, 10e-7, None)
         clipped_W = np.clip(W, float(self.lower_cond_bound), float(self.upper_cond_bound))
         self.W = clipped_W

@@ -26,21 +26,23 @@ class MSE:
         if isinstance(output_node_voltages, dict):
             # Convert dict values to a NumPy array
             output_node_voltages_values = np.array(list(output_node_voltages.values()))
+            num_output_nodes = len(output_node_voltages)
         elif isinstance(output_node_voltages, list):
             # Convert the list to a NumPy array directly
             output_node_voltages_values = np.array(output_node_voltages)
+            num_output_nodes = output_node_voltages_values.shape[1]
         else:
             raise ValueError("output_node_voltages must be either a dictionary or a list.")
         
+        #Number of outputs
         # Reshape into a (rows, 2) array
         output_nodes_voltages = output_node_voltages_values.reshape(-1, 2)
-        prediction = output_nodes_voltages[:, 0] - output_nodes_voltages[:, 1]
-
+        prediction = output_nodes_voltages[:, 0] - output_nodes_voltages[:, 1] # array of predictions
 
         if mode == 'train':
-            num_output_nodes = output_nodes_voltages.shape[0]
-            losses = np.zeros(shape=(num_output_nodes, ))
-            currents = np.zeros(shape=(num_output_nodes, 2))
+
+            losses = np.zeros(shape=(int(num_output_nodes/2), ))
+            currents = np.zeros(shape=(int(num_output_nodes/2), 2))
 
             # MSE calculatuon
             diff = prediction - target
@@ -52,16 +54,24 @@ class MSE:
             currents[:,1] = beta * diff
             return losses, currents
 
-        return prediction.reshape(-1, 1)
+        return prediction.reshape(-1, int(num_output_nodes/2))
 
     def verify_result(self, target, prediction):
-        target_2d = target.reshape(-1, 1)  # shape (N,1)        #c = np.product(np.equal(target, np.round(prediction, 0)), axis=1)
-        c = np.product(np.equal(target_2d, prediction>=self.boundary), axis=1)
-        return c
+        # Convert predictions to class indices
+        prediction_indices = np.argmax(prediction, axis=1)  # assuming prediction is shape (N, num_classes)
+        
+        # Convert target from one-hot encoded to class indices
+        target_indices = np.argmax(target, axis=1)  # assuming target is shape (N, num_classes)
+        
+        # Compare prediction_indices and target_indices
+        correct_predictions = (prediction_indices == target_indices).astype(int)  # Result is 0 for false, 1 for true
+        
+        return correct_predictions
     
     
     def binary_prediction(self, prediction):
-        return (prediction >= self.boundary).astype(int)
+        prediction_indices = np.argmax(prediction, axis=1)
+        return (prediction_indices).astype(int)
 
 
 class BCE:

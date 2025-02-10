@@ -18,6 +18,7 @@ from sklearn.datasets import load_iris
 import pandas as pd
 from sklearn.datasets import make_moons
 from sklearn.model_selection import train_test_split
+from sklearn.datasets import load_wine
 
 def plot_moons_data(X, Y):
     """
@@ -50,20 +51,6 @@ def plot_moons_data(X, Y):
     plt.grid(True)
     plt.show()
 
-def prepare_moons_data_neg_output(n_samples, noise=0.1, random_state=42):
-    # Generate the moons dataset
-    X, Y = make_moons(n_samples=n_samples, noise=noise, random_state=random_state)
-    
-    # Center X so that each feature has mean ~ 0
-    X_centered = X - np.mean(X, axis=0)
-    
-    # Convert Y from {0, 1} to {-1, 1}
-    Y_mapped = 2 * Y - 1  # 0 -> -1,  1 -> +1
-    
-    # Convert Y to a column vector
-    Y_column = Y_mapped.reshape(-1, 1)
-    
-    return X_centered, Y_column
 
  
 def prepare_moons_data(n_samples, noise=0.1, random_state=42):
@@ -77,7 +64,38 @@ def prepare_moons_data(n_samples, noise=0.1, random_state=42):
     
     return X_centered, Y
 
+
+def prepare_simple_dataset(n_samples):
+    X = np.ones((n_samples, 3))
+    X[:, 0] = 0.6
+    X[:, 1] = 0.3
+    X[:, 0] = 0
+    Y = np.zeros((n_samples, 3))
+    Y[:, 2] = 0
+    return X, Y
+
+
+def prepare_wine_data(random_state=42):
+    """
+    Loads and centers the Wine dataset.
+    
+    Parameters:
+        random_state (int): Random seed for reproducibility (not used in load_wine but kept for interface consistency).
+        
+    Returns:
+        X_centered (numpy.ndarray): The feature matrix with each feature centered (mean ~ 0).
+        Y (numpy.ndarray): The target labels.
+    """
+    # Load the wine dataset
+    wine_data = load_wine()
+    X = wine_data['data']   # shape: (n_samples, n_features)
+    Y = wine_data['target'] # shape: (n_samples,)
+    
+    # Center X so that each feature has a mean ~ 0
+    
+    return X, Y
    
+    
 def generate_biased_inputs(X, Y, scale_factor):
     X_scaled = scale_factor * X
     Y_scaled =  Y
@@ -105,16 +123,24 @@ def generate_2_bias_pos_neg_inputs(X, Y, scale_factor, bias, output_scale = 1):
 
 
 
-
-def generate_biased_pos_neg_inputs(X, Y, scale_factor, output_scale = 1):
-    X_pos =  X * scale_factor 
+def onehot_pos_neg_inputs(X, Y, scale_factor, bias, output_scale = 1):
+    # Scale positive and negative inputs
+    X_pos = X * scale_factor
     X_neg = -X * scale_factor
-    X_bias_pos = scale_factor * (1-X_pos)
-    X_bias_neg = scale_factor * (1-X_neg)
+    X_bias_pos = bias*np.ones((X_pos.shape[0],1))
+    X_bias_neg = -bias*np.ones((X_pos.shape[0],1))
+    
+    # Combine inputs
     X_in = np.hstack((X_pos, X_neg, X_bias_pos, X_bias_neg))
-    Y = Y * output_scale
-    return X_in, Y    
+    
+    # Scale output
+    Y_scaled = Y * output_scale
 
+    # Convert Y to one-hot encoding
+    num_classes = np.max(Y_scaled) + 1  # Assuming classes start from 0
+    Y_one_hot = np.eye(num_classes)[Y_scaled.astype(int)]
+
+    return X_in, Y_one_hot
 
 
 
