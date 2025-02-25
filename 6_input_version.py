@@ -178,7 +178,7 @@ class MyNetwork:
         # all_parameters.extend([f".PARAM {item}" for item in ampv])
         # all_parameters.extend([f".PARAM {item}" for item in ampc])
         all_parameters.extend([f".PARAM {item}\n" for item in form])
-        
+    
         return all_parameters
     
     def extract_connections(self):
@@ -191,7 +191,7 @@ class MyNetwork:
     
   
 
-    def free_nudged_train(self, eldo_process, X_train, Y_train, epoch, optimizer = None, debug = False):
+    def free_nudged_train(self, eldo_process, X_train, Y_train, epoch, optimizer = None, debug = True):
         
         
         layers = self.layers
@@ -218,8 +218,6 @@ class MyNetwork:
         
         num_batches = int(np.ceil(len(X_train) / batch_size))
          
-        for layer in resistive_layers:
-            layer.gamma *= 1
     
         prediction_list = []
         loss_list = []
@@ -237,13 +235,11 @@ class MyNetwork:
         voltage_dict_nudge = dict.fromkeys(self.all_nodes, None)
         
         timings_list = []
-        offset= 0
+        offset = 0 
         if epoch > 1:
             file_size = os.path.getsize(aex_result_file)
             offset = file_size
-            #print(f"File size before clearing: {file_size} bytes")
-        
-        
+            print(f"File size before clearing: {file_size} bytes")
         for i in range(num_batches):
             #if i > 0:
                 #start_index += 3
@@ -265,11 +261,10 @@ class MyNetwork:
                 for j, key in enumerate(input_keys_list):
                     input_dict[key] = X[j]  # Directly assign the value from X to the corresponding key
                     
-                beta_r = beta
-                set_input_voltages(eldo_process, input_dict, debug = False)
+                beta_r = beta * np.random.randint(1,10) 
+                set_input_voltages(eldo_process, input_dict, debug)
                 #move at the end
-                disable_current_sources(eldo_process, inudge_dict, debug = False)
-                #time.sleep(0.01)
+                disable_current_sources(eldo_process, inudge_dict, debug)
                 start_simulation = time.time()
                 run_eldo_simulation(eldo_process, debug)
                 
@@ -284,11 +279,12 @@ class MyNetwork:
                 simulation_time_list.append(end_simulation)
                 start_vol_extract = time.time()
                 #voltage_dict_free = parse_aex_file_no_end(aex_result_file, start_index, simulation_type, voltage_dict_free)
-                parse_aex_file_from_end_timed(aex_result_file, n_of_node_voltages, simulation_type, voltage_dict_free, offset)
-#                timings_list.append(timings)
+                timings = parse_aex_file_from_end_timed(aex_result_file, n_of_node_voltages, simulation_type, voltage_dict_free, offset)
+                timings_list.append(timings)
                 vol_extract_time = time.time() - start_vol_extract
                 vol_extract_list.append(vol_extract_time)
-
+                #print(f"Voltage extraction time {vol_extract_time}")
+                #print(f"Simulation duration {simulation_end_time}")
                 
                 for layer in resistive_layers:
                     layer.update__free_voltages(voltage_dict_free)
@@ -298,39 +294,32 @@ class MyNetwork:
                 output_values = np.array(list(outputs.values()))
                 output_list.append(output_values)
                 
-                mode = "train-voltage"
+                mode = "train"
                 #target = Y * self.boundary
                 target = Y
-                sample_losses, target_voltages = loss_fn(outputs, target, beta_r, mode = "train-voltage")#need to decide where to initialize this function - remember that loss_fn comes from the already initialized MSE
+                sample_losses, currents = loss_fn(outputs, target, beta_r, mode)#need to decide where to initialize this function - remember that loss_fn comes from the already initialized MSE
                 #predicted value
+                mode = 'test' 
                 #pred_free = loss_fn(outputs, target, beta_r, mode)
                 
                 #now I can simply zip the currents to the parameters of the last layer and repeat
-                target_voltages = target_voltages.flatten()
+                flat_currents = currents.flatten()
 
                 
-                if mode == "train-current":
-                    for k, key in enumerate(inudge_keys_list):
-                        inudge_dict[key] = flat_currents[k]    
-                        
-                if mode == "train-voltage":
-                    voltage_index = 0
-                    for key in inudge_keys_list:
-                        if key.startswith("VNUDGE"):
-                            inudge_dict[key] = target_voltages[voltage_index]
-                            voltage_index += 1
-                        elif key.startswith("RNUDGE"):
-                            inudge_dict[key] = 0.01
-                                        
+
+                for k, key in enumerate(inudge_keys_list):
+                    inudge_dict[key] = flat_currents[k]    
+                    
+                    
+                    
                 #output_layer.parameters = output_layer.update_parameters(flat_currents)
                 
-                set_currents_nudge_mode(eldo_process, inudge_dict, debug = False)
+                set_currents_nudge_mode(eldo_process, inudge_dict, debug)
                 run_eldo_simulation(eldo_process, debug)
                 #lines_of_interest = wait_for_eldos_completion(eldo_process, debug)
                 wait_for_eldos_completion_old(eldo_process, debug)
 
-                mode = 'test' 
-
+                
                 start_index += n_of_node_voltages + 3
                 end_index = start_index + n_of_node_voltages
                 
@@ -349,7 +338,7 @@ class MyNetwork:
                 outputs_n = layer.output_nudge_voltages
                 outputs_n_values = list(outputs_n.values())#the outputs are just the outputs of the last layer
                 output_list_nudge.append(outputs_n_values)   
-                sample_losses_n, voltages_n = loss_fn(outputs_n, target, beta_r, mode = "train-voltage")
+                
                 
                 
                 for layer in resistive_layers:
@@ -369,14 +358,12 @@ class MyNetwork:
             for i, layer in enumerate(resistive_layers):
                 layer.update_W(mode = "clip_updates", clip = self.gradient_clip)
                 layer.update_res_dict()
-                set_resistances(eldo_process, layer.resistor_dict, debug = False)
-                #time.sleep(0.01)
+                set_resistances(eldo_process, layer.resistor_dict, debug)
                 ratios = compute_cosine_similarity(layer.deltaG, layer.W_old, layer.W)
                 if i == 0:
                     ratios_list1.append(ratios)
                 elif i == 1:
                     ratios_list2.append(ratios)
-                #print(f"Norm of the deltaG {np.linalg.norm(layer.deltaG, ord=2)}")
                 #print(f"finished batch {i}")
                 
             weight_matrices_1.append(layers[1].W)
@@ -392,15 +379,15 @@ class MyNetwork:
         
         
         
-    #    num_iterations = len(timings_list)
-#        num_parts = len(timings_list[0])
-        # average_timings = [0.0] * num_parts
-        # for timings in timings_list:
-        #     for i, t in enumerate(timings):
-        #         average_timings[i] += t
-        # average_timings = [t / num_iterations for t in average_timings]
+        num_iterations = len(timings_list)
+        num_parts = len(timings_list[0])
+        average_timings = [0.0] * num_parts
+        for timings in timings_list:
+            for i, t in enumerate(timings):
+                average_timings[i] += t
+        average_timings = [t / num_iterations for t in average_timings]
 
-        # print("Average timings (in seconds):", average_timings)
+        print("Average timings (in seconds):", average_timings)
         
         
         #plot_cosine_similarity(ratios_list1)
@@ -408,7 +395,7 @@ class MyNetwork:
         ratio2_mean = np.array(np.mean(ratios_list2))
         ratio_list = [ratio1_mean, ratio2_mean]
         #plot_cosine_similarity(ratios_list2)
-        #reset_chi_file(eldo_process, debug = False)
+        reset_chi_file(eldo_process, debug = True)
         #reset_extract_file(eldo_process, debug = True)
         #truncate__aex_file(aex_result_file, 10)
         #clear_aex_file(aex_result_file)
@@ -416,12 +403,12 @@ class MyNetwork:
         epoch_acc = np.mean(loss_fn.verify_result(Y_train, np.array(predictions)))
         print(f"Accuracy after epoch {epoch_acc}")
         mean_time_extract = np.mean(np.array(vol_extract_list))
-        #print(f"Average voltage extract time {mean_time_extract}")
+        print(f"Average voltage extract time {mean_time_extract}")
         mean_time_simulation = np.mean(np.array(simulation_time_list))
-        #print(f"Average simulation time {mean_time_simulation}")
-        output_nodes = [0, 1, 2, 3]
+        print(f"Average simulation time {mean_time_simulation}")
+        output_nodes = [0, 2]
         #gamma = None
-        #plot_free_and_nudged(output_list, output_list_nudge, output_nodes, beta, gamma = None, epoch = None)
+        plot_free_and_nudged(output_list, output_list_nudge, output_nodes, beta, gamma = None, epoch = None)
         #plot_weight_matrix_evolution_lines(weight_matrices_1, interval=10, title = "First weight matrix")    
         #plot_weight_matrix_evolution_lines(weight_matrices_2, interval = 10,title = "Second weight matrix")  
         #plot_weight_matrix_evolution_separate(weight_matrices_1, interval=10, title = "First weight matrix")    
@@ -458,7 +445,8 @@ class MyNetwork:
         
         if draw_grid:
             X_in, Y = input_function(X_grid, Y_in, scale_factor = self.scale_factor, bias = self.bias, output_scale=1)
-            
+        
+        
         input_layer = self.layers[0]
         output_layer = self.layers[-1]
         input_dict = input_layer.inputs
@@ -500,7 +488,7 @@ class MyNetwork:
             lines_of_interest = wait_for_eldos_completion(eldo_process, debug)
 
             #end_index = start_index + n_of_node_voltages
-            parse_aex_file_from_end_timed(aex_result_file, n_of_node_voltages, simulation_type, voltage_dict_free, offset)
+            timings =  parse_aex_file_from_end_timed(aex_result_file, n_of_node_voltages, simulation_type, voltage_dict_free, offset)
             output_layer.update__free_voltages(voltage_dict_free)
             
             outputs = output_layer.output_free_voltages #the outputs are just the outputs of the last layer
@@ -525,74 +513,7 @@ class MyNetwork:
         
         return binary_array
     
-    def calc_desired_outputs(self, eldo_process, X, Y, input_function, epoch, debug):
-        input_layer = self.layers[0]
-        output_layer = self.layers[-1]
-        input_dict = input_layer.inputs
-        input_keys_list = list(input_dict.keys())
 
-
-        simulation_type = self.simulation_type
-        n_of_node_voltages = len(self.all_nodes)
-        voltage_dict_free = dict.fromkeys(self.all_nodes, None)
-
-
-        
-        resistive_layers = [layer for layer in self.layers if getattr(layer, 'type', None) == 'resistive']
-        output_layer = resistive_layers[-1]
-        binary_list = []
-        output_list = []
-        
-        #clear_aex_file(aex_result_file)
-
-        if epoch == 0:
-            start_index = 4
-        else:
-            start_index = 3 
-        start_index = 3
-        aex_result_file = self.aex_file_path
-
-        file_size = os.path.getsize(aex_result_file)
-        offset = file_size
-        print(f"File size before output calc: {file_size} bytes")
-        
-        
-        for X in X_in:
-            
-            for i, key in enumerate(input_keys_list):
-                input_dict[key] = X[i]  # Directly assign the value from X to the corresponding key
-            
-            
-            set_input_voltages(eldo_process, input_dict, debug)
-                #move at the end
-            run_eldo_simulation(eldo_process, debug)
-
-            parse_aex_file_from_end_timed(aex_result_file, n_of_node_voltages, simulation_type, voltage_dict_free, offset)
-            output_layer.update__free_voltages(voltage_dict_free)
-            
-            outputs = output_layer.output_free_voltages #the outputs are just the outputs of the last layer
-            output_values = list(outputs.values())
-            output_list.append(output_values)
-
-
-            #prediction = self.loss_fn(output_values, mode='test') #need to decide where to initialize this function - remember that loss_fn comes from the already initialized MSE
-            #binary_prediction = self.loss_fn.binary_prediction(prediction)
-            #binary_list.extend(binary_prediction)
-            
-            # if counter > 10:
-            #     truncate__aex_file(aex_result_file, 10)
-            #     counter = 0
-            #     start_index = 3
-            # counter += 1
-        n_of_outputs = len(output_values)
-        output_array = np.array(binary_list).reshape(-1,n_of_outputs)
-        target_values = np.mean(output_array, axis = 0)
-        
-        #accuracy = np.mean(np.equal(binary_array, Y_in)) * 100
-        #print(f"Accuracy: {accuracy:.2f}%")
-        
-        return binary_array
-    
 
     def draw_grid(self, eldo_process, X_val, Y_val, input_function, epoch, debug):
         
@@ -820,8 +741,8 @@ def main(): #probably objective function
     # Initialize the network layers
     
 
-    scale_factor_list = [4]
-    #batch_size = 32
+    scale_factor_list = [4, 5, 6]
+    batch_size = 2
     for scale_factor in scale_factor_list:
         #layers = initialize_network_layers(simulation_details, network_details)
 
@@ -835,19 +756,18 @@ def main(): #probably objective function
         # Load and center the wine dataset
         X_t, Y_t = prepare_moons_data(num_samples, noise=0.1, random_state=41)
         #X_t, Y_t = prepare_digits_data()
-        #X_t, Y_t = prepare_iris_data()
         
         #X, Y = linear_regression(n_of_samples = 1200,a = float(1), b = float(7))
         
         
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X_t) * scale_factor
+        scaler = MinMaxScaler((0,1))
+        X_scaled = scaler.fit_transform(X_t)
         #X_scaled = X_scaled
 
         # Process the scaled wine data with onehot_pos_neg_inputs.
         # Note: scale_factor, bias, and output_scale should be defined previously.
-        input_function = onehot_pos_neg_inputs_1bias
-        X, Y = onehot_pos_neg_inputs_1bias_double_input(X_scaled, Y_t, bias = 1, output_scale=1)
+        input_function = onehot_pos_neg_4inputs_singlebias
+        X, Y = onehot_pos_neg_4inputs_singlebias(X_scaled, Y_t, scale_factor, bias = 1, output_scale=1)
         
 
         
@@ -860,7 +780,7 @@ def main(): #probably objective function
         
         # Split the processed data into training and test sets.
         #from sklearn.model_selection import train_test_split
-        X_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=0.2, shuffle=True)
+        X_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=0.2, random_state=4)
         
         #vac+bias is the bias of the ac voltage source, vbias is the additional bias that is currently not used
         #bias_dict = {"VAC_BIAS" : v_ac_bias}
@@ -893,8 +813,8 @@ def main(): #probably objective function
             #set_input_voltages(eldo_process, bias_dict, debug = True)
             #print(f"Starting epoch {epoch} for boundary {boundary}, batch size {batch_size} and scale factor {scale_factor}")
             results = net.free_nudged_train(eldo_process, X_train, y_train, epoch, optimizer = None, debug = False)
-            # if epoch in draw_grid_to_plot:
-            #     net.draw_grid(eldo_process, X_train, y_train, input_function, epoch, debug = False)
+            if epoch in draw_grid_to_plot:
+                net.draw_grid(eldo_process, X_train, y_train, input_function, epoch, debug = False)
 
             accuracy_list.append(results["accuracy"])
             big_loss_list.append(results["loss_list"])
@@ -919,8 +839,8 @@ def main(): #probably objective function
             #rel_change1 = compute_relative_changes(weight_matrices, epsilon=1e-10)
             
             
-            #plot_weight_histogram(weight_matrix1, bins=50, title='Weight Matrix 1 Histogram')
-            #plot_weight_histogram(weight_matrix2, bins=50, title='Weight Matrix 2 Histogram')
+            plot_weight_histogram(weight_matrix1, bins=50, title='Weight Matrix 1 Histogram')
+            plot_weight_histogram(weight_matrix2, bins=50, title='Weight Matrix 2 Histogram')
             weight_matrices_1.append(results["weight_matrix_1"])
             weight_matrices_2.append(results["weight_matrix_2"])
             

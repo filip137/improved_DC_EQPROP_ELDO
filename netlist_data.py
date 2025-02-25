@@ -75,6 +75,25 @@ XM10 INPUT_CASCADE OUTPUT_DIFFERENTIAL_AMP 0 0 EN5V0_BS3JU w=8e-07 l=2e-06
 .ENDS
 *** End of subcircuit definition.
 """
+
+
+, "perfect_amp" : """
+.LIB /cao/DK/ST/HCMOS9A_10.9/Addon_NVM_H9A@2018.4.1/tools/eldo/model_oxram/OxRRAM.lib OxRRAM_TT
+.LIB /home/filip/CMOS130/corners.eldo 
+.LIB /home/filip/Documents/MyDiode.lib 
+*** Library name: tests_new
+*** Cell name: neuron
+*** View name: schematic
+.SUBCKT NEURON VIN VOUT
+    D0 VIN NET6 diode1
+    D1 NET7 VIN diode1
+    V2 NET6 0 DC VDIODE1
+    V3 NET7 0 DC VDIODE2
+    F0 0 VIN EVCVS1 {1/AMP}
+    EVCVS1 VOUT 0 VIN 0 AMP
+.ENDS
+*** End of subcircuit definition.
+"""
 }
     
     
@@ -104,6 +123,11 @@ PARAMS = {
 .PARAM CD1_W=4u
 .PARAM CD1_L=650n
 .PARAM CAP=1n
-"""
+""",
+"perfect_amp" : """
+.PARAM VDIODE2=-0.5
+.PARAM VDIODE1=0.5
+.PARAM AMP=3
+.PARAM AMPC=1"""
 }
     

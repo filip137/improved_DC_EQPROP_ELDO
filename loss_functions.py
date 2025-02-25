@@ -12,48 +12,98 @@ class MSE:
     def __init__(self, boundary):
         self.boundary = boundary
 
-    def __call__(self, output_node_voltages, target=None, beta=None, mode='train'):
+    def __call__(self, output_node_voltages, target=None, beta=None, mode='train-voltage'):
         """
-        Calculate losses and gradient currents according to the
-        Mean Squared Error (MSE)
-        """
-        """
-        Calculate losses and gradient currents according to the
-        Mean Squared Error (MSE).
+        Calculate losses and gradient currents according to the Mean Squared Error (MSE).
         Handles both dict and list input formats for output_node_voltages.
         """
         # Check if output_node_voltages is a dictionary
         if isinstance(output_node_voltages, dict):
             # Convert dict values to a NumPy array
             output_node_voltages_values = np.array(list(output_node_voltages.values()))
-            num_output_nodes = len(output_node_voltages)
         elif isinstance(output_node_voltages, list):
             # Convert the list to a NumPy array directly
             output_node_voltages_values = np.array(output_node_voltages)
-            num_output_nodes = output_node_voltages_values.shape[1]
         else:
             raise ValueError("output_node_voltages must be either a dictionary or a list.")
+    
+        # Ensure the array is at least 2D: if it's 1D, it becomes a row vector.
+        output_node_voltages_values = np.atleast_2d(output_node_voltages_values)
+    
+        # Now, assume that the columns represent the output nodes
+        num_output_nodes = output_node_voltages_values.shape[1]
         
         #Number of outputs
         # Reshape into a (rows, 2) array
-        output_nodes_voltages = output_node_voltages_values.reshape(-1, 2)
-        prediction = output_nodes_voltages[:, 0] - output_nodes_voltages[:, 1] # array of predictions
-
-        if mode == 'train':
-
+        if num_output_nodes != 1:
+            output_nodes_voltages = output_node_voltages_values.reshape(-1, 2)
+            prediction = output_nodes_voltages[:, 0] - output_nodes_voltages[:, 1] # array of predictions
+            
+        elif num_output_nodes == 1:
+            output_nodes_voltages = output_node_voltages_values
+            prediction = output_nodes_voltages[:, 0]
+        
+        if mode == 'train-current':
             losses = np.zeros(shape=(int(num_output_nodes/2), ))
-            currents = np.zeros(shape=(int(num_output_nodes/2), 2))
 
+            currents = np.zeros(shape=(int(num_output_nodes/2), 2))
+            
+            
+            #currents = np.zeros(shape=(int(num_output_nodes/2), 1))
+            
             # MSE calculatuon
             diff = prediction - target
             losses = 0.5 * np.power(diff, 2)
 
             # loss current calculation
             #beta = np.random.choice([-1, 1]) * beta
-            currents[:,0] = -beta * diff
-            currents[:,1] = beta * diff
+            currents[:,0] = beta * diff
+            currents[:,1] = - beta * diff
+            #currents = - beta * diff
+            
             return losses, currents
+        
+        if mode == 'train-voltage':
+            losses = np.zeros(shape=(int(num_output_nodes/2), ))
 
+            voltages = np.zeros(shape=(int(num_output_nodes/2), 2))
+            
+            
+            #currents = np.zeros(shape=(int(num_output_nodes/2), 1))
+            
+            # MSE calculatuon
+            diff = prediction - target
+            losses = 0.5 * np.power(diff, 2)
+
+            # loss current calculation
+            #beta = np.random.choice([-1, 1]) * beta
+            voltages[:,0] = -beta * diff
+            voltages[:,1] = + beta * diff
+            target_voltages = output_nodes_voltages + voltages
+            #currents = - beta * diff
+            
+            return losses, target_voltages
+
+
+        if mode == 'simple-train-voltage':
+            losses = np.zeros(shape=(int(num_output_nodes/2), ))
+
+            voltages = np.zeros(shape=(int(num_output_nodes), 1))
+            
+            
+            #currents = np.zeros(shape=(int(num_output_nodes/2), 1))
+            
+            # MSE calculatuon
+            diff = prediction - target
+            losses = 0.5 * np.power(diff, 2)
+
+            # loss current calculation
+            #beta = np.random.choice([-1, 1]) * beta
+            voltages[:,0] = -beta * diff
+            target_voltages = output_nodes_voltages + voltages
+            #currents = - beta * diff
+            
+            return losses, target_voltages
         return prediction.reshape(-1, int(num_output_nodes/2))
 
     def verify_result(self, target, prediction):

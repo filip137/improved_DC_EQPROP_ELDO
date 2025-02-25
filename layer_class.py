@@ -37,7 +37,7 @@ class BaseLayer:
 #I create different kinds of layers and in each one I store the parameters in a dictionary which contains keys and values. I can then easily gather all the keys to generate the netlist
 
 class InputLayer(BaseLayer):
-    def __init__(self, n_of_nodes, vdc_bias, freq, which_layer=0, bias_ = True, trainable=False):
+    def __init__(self, n_of_nodes, vdc_bias, freq, simulation_type, which_layer=0, bias_ = True, trainable=False):
         # Initialize the parent class (BaseLayer) with the same number of inputs and outputs
         super().__init__(n_of_nodes, n_of_nodes, which_layer=which_layer, trainable=trainable)
         
@@ -45,6 +45,9 @@ class InputLayer(BaseLayer):
         self.vdc_bias = vdc_bias
         self.freq = freq
         self.bias_ = bias_
+        
+        self.simulation_type = simulation_type
+        
         
         self.inputs = {}
         # The number of inputs will now equal the number of outputs (n_of_nodes)
@@ -76,8 +79,11 @@ class InputLayer(BaseLayer):
     def generate_variables(self):
         vac_parameters = []
         for i in range(1, self.n_of_inputs + 1):
-            v_ac = f"VAC{i}"
-            self.inputs[v_ac] = 0
+            if self.simulation_type == "FSST":
+                v_ac = f"VAC{i}"
+            if self.simulation_type == "DC":
+                v_ac = f"VDC{i}"
+                self.inputs[v_ac] = 0
             vac_parameters.append(v_ac)
         vac_parameters.append("VDC_BIAS")
         return vac_parameters
@@ -96,7 +102,12 @@ class InputLayer(BaseLayer):
         vol_sources = self.vdc_parameters
         freq = self.freq
         for i, (node, source) in enumerate(zip(input_nodes, vol_sources)):
-            line = f"VSOURCE{i+1} {node} 0 DC VDC_BIAS AC 100m 0 SIN (VDC_BIAS {source} {freq})\n"
+            if self.simulation_type == "FSST":
+                line = f"VSOURCE{i+1} {node} 0 DC VDC_BIAS AC 100m 0 SIN (VDC_BIAS {source} {freq})\n"
+            elif self.simulation_type == "DC":
+                line = f"VSOURCE{i+1} {node} 0 DC {source}\n"
+            else:
+                raise ValueError("Invalid simulation type")
             lines.append(line)
             #self.add_parameter(source) 
         return lines
@@ -112,7 +123,9 @@ class NonLinearLayer(BaseLayer):
         self.input_node_list = self.build_input_nodes()
         self.output_node_list = self.build_output_nodes()
         self.neuron = neuron_type
-
+        
+        
+        #Passing nonlin parameters as an input
         self.parameters = nonlin_parameters
         self.connections = self.build_connections()
         
@@ -161,7 +174,12 @@ class NonLinearLayer(BaseLayer):
         for i, (in_node, out_node) in enumerate(zip(in_nodes, out_nodes)):
             in_node_int = int(in_node.split("_")[-1])
             out_node_int = int(out_node.split("_")[-1])
-            line = f"XI{layer}{in_node_int}{out_node_int} {in_node} {out_node} {self.neuron}\n"
+            if self.neuron == "amp_ss":
+                line = f"XI{layer}{in_node_int}{out_node_int} {in_node} {out_node} AMPLIFICATION_SS\n"
+            elif self.neuron == "perfect_amp":
+                line = f"XI{layer}{in_node_int}{out_node_int} {in_node} {out_node} NEURON\n"
+            else:
+                raise ValueError("Invalid neuron name")
             lines.append(line)
         return lines
           
@@ -200,6 +218,7 @@ class DenseLayer(BaseLayer):
  
     
         self.W = self.initialize_W()
+        self.deltaG = np.zeros(self.W.shape)
         self.gamma = gamma
         self.beta = beta
         
@@ -336,25 +355,67 @@ class DenseLayer(BaseLayer):
         return self.W
     
     #Update the weight matrix
-    def update_W(self, free_vol_matrix_diff, nudge_vol_matrix_diff, mode):
-        beta = self.beta
+    def update_deltaG(self, free_vol_matrix_diff, nudge_vol_matrix_diff, batch_size, beta_custom):
+        if beta_custom:
+            beta = beta_custom
+        else:
+            beta = self.beta
         gamma = self.gamma
-        deltaG = gamma/beta * (np.square(nudge_vol_matrix_diff) - np.square(free_vol_matrix_diff)) * 1/self.lr
+        deltaG =  gamma/beta * (np.square(nudge_vol_matrix_diff) - np.square(free_vol_matrix_diff)) * 1/self.lr * 1/batch_size
+        mode = "non_discrete"
         if mode == "discrete":
-            step_size = 1e-7
-            deltaG = np.clip(deltaG, -step_size, step_size)
-        W = self.W - deltaG
+            step_size = 1e-2
+            deltaG = np.sign(deltaG) * step_size
+        self.deltaG += deltaG
         #clipped_W = np.clip(W, 10e-7, None)
-        clipped_W = np.clip(W, float(self.lower_cond_bound), float(self.upper_cond_bound))
+        #clipped_W = np.clip(W, float(self.lower_cond_bound), float(self.upper_cond_bound))
+        return self.deltaG
+    
+    
+    
+    
+    
+    #Update the weight matrix
+    def update_W(self, mode, clip, print_reduction = False):
+        if mode == "clip_updates":
+            step_size = clip
+            
+            # Compute the norm before clipping
+            norm_before = np.linalg.norm(self.deltaG)
+            
+            # Apply clipping to the gradient update
+            self.deltaG_clipped = np.clip(self.deltaG, -step_size, step_size)
+            if print_reduction:
+                # Compute the norm after clipping
+                norm_after = np.linalg.norm(self.deltaG_clipped)
+                
+                # Optionally, compute the ratio or difference to see the effect of clipping
+                reduction_ratio = norm_after / norm_before if norm_before > 0 else 0
+                
+                print("Norm before clipping: ", norm_before)
+                print("Norm after clipping:  ", norm_after)
+                print("Reduction ratio (after/before):", reduction_ratio)
+            
+            # Now you can proceed with the update using deltaG_clipped
+            # self.W -= learning_rate * deltaG_clipped  (for example)
+        
+        self.W_old = self.W
+        self.unclipped_W = self.W - self.deltaG_clipped
+        clipped_W = np.clip(self.unclipped_W, self.lower_cond_bound, self.upper_cond_bound)
+        
         self.W = clipped_W
         return self.W
     
     
-       
+    
+    
+    def zero_grad(self):
+        self.deltaG = np.zeros(self.deltaG.shape)
+      
     
     #Update the layer's resistor dictionary based on the layer's conductance matrix
     def update_res_dict(self):
-        clipped_W = np.clip(self.W, self.lower_cond_bound, self.upper_cond_bound)
+        #clipped_W = np.clip(self.W, self.lower_cond_bound, self.upper_cond_bound)
         resistor_matrix = 1/self.W
         # Step 2: Flatten the matrix into a 1D array
         resistor_array = resistor_matrix.flatten(order = 'F')
@@ -419,43 +480,47 @@ class DenseLayer(BaseLayer):
             
             
             
-    def run_update_process(self, mode):
+    def run_update_process(self, batch_size, beta_custom):
         # Step 1: Update voltage differences
         free_vol_matrix_diff, nudge_vol_matrix_diff = self.calc_vol_difference()
         
         # Step 2: Update weights
-        self.W = self.update_W(free_vol_matrix_diff, nudge_vol_matrix_diff, mode)
+        self.deltaG = self.update_deltaG(free_vol_matrix_diff, nudge_vol_matrix_diff, batch_size, beta_custom)
         
     
-        return self.W
+        return self.deltaG
     
 class OutputLayer(BaseLayer):
     
     
-    def __init__(self, n_of_nodes, freq, which_layer):
+    def __init__(self, n_of_nodes, freq, simulation_type, which_layer):
         # Initialize the parent class (BaseLayer)
         super().__init__(n_of_nodes, n_of_nodes, which_layer)
 
         # Call the methods to generate and assign attributes
 
         self.freq = freq
+        self.nudging_mode = "voltage"
 
+        self.simulation_type = simulation_type
 
         self.input_node_list = self.generate_node_names()
         self.output_node_list = ['0'] * len(self.input_node_list)
 
-        self.current_sources = self.generate_sources_id()
+        self.sources = self.generate_sources_id()
 
         self.parameters = self.generate_sources_dict() #the important dict for the parameters
         self.connections = self.build_connections()
-
     
     def generate_sources_id(self):
-        current_sources = []
+        sources = []
         for i in range(1, self.n_of_inputs +1):
-            current_source = f"I_SOURCE{i}"
-            current_sources.append(current_source)
-        return current_sources
+            if self.nudging_mode == "current":
+                source = f"I_SOURCE{i}"
+            elif self.nudging_mode == "voltage":
+                source = f"V_SOURCE{i}"            
+            sources.append(source)
+        return sources
     
     def generate_node_names(self):
         node_names = []
@@ -471,18 +536,39 @@ class OutputLayer(BaseLayer):
     #I am again double doing it, it would be probably easier just to generate the connestions 
     
     def generate_sources_dict(self):        
-        inudge_dict = {}
+        source_dict = {}
+        rnudge_dict = {}
         for i in range(1, self.n_of_outputs +1):
-            idc = f"INUDGE_{i}"
+            if self.nudging_mode == "current":
+                idc = f"INUDGE_{i}"
+                rdc = None
+            elif self.nudging_mode == "voltage":
+                rdc = f"RNUDGE_{i}"
+                idc = f"VNUDGE_{i}"
             #inudge_parameters.append(idc)
-            if idc not in inudge_dict:
-                inudge_dict[idc] = 0
-        return inudge_dict  
+            if idc not in source_dict:
+                source_dict[idc] = 0
+            if rdc is not None and rdc not in source_dict:
+                rnudge_dict[rdc] = 9999999
+                source_dict.update(rnudge_dict)
+        return source_dict  
     
     def build_connections(self):
         lines= []
-        for i, (current_source, node_name) in enumerate(zip(self.current_sources, self.input_node_list)):
-            line = f"{current_source} {node_name} 0 DC 0 SIN (0 INUDGE_{i+1} {self.freq})\n"
+        for i, (source, node_name) in enumerate(zip(self.sources, self.input_node_list)):
+            if self.nudging_mode == "current":
+                if self.simulation_type == "FSST":
+                    line = f"{source} {node_name} 0 DC 0 SIN (0 INUDGE_{i+1} {self.freq})\n"
+                elif self.simulation_type == "DC":
+                    line = f"{source} {node_name} 0 DC INUDGE_{i+1}\n"
+            elif self.nudging_mode == "voltage":
+                if self.simulation_type == "FSST":
+                    line = f"{source} {node_name} 0 DC 0 SIN (0 INUDGE_{i+1} {self.freq})\n"
+                elif self.simulation_type == "DC":
+                    line = []
+                    line_r = f"RN_{i+1} {node_name}N {node_name} RNUDGE_{i+1}\n"
+                    line_s = f"{source} {node_name}N 0 DC VNUDGE_{i+1}\n"
+                    line.extend([line_r, line_s])
             lines.append(line)
         return lines
     
@@ -491,7 +577,7 @@ class OutputLayer(BaseLayer):
         if len(values_array) != len(self.parameters):
             raise ValueError("The size of the values array must match the size of the parameters dictionary")
 
-    # Update each key in the parameters dict with the corresponding value from values_array
+    # Update each key in the parameters dict with the correspondi/.,m\';alue fom values_array
         for key, value in zip(self.parameters.keys(), values_array):
             self.parameters[key] = value
 # class Synapse:

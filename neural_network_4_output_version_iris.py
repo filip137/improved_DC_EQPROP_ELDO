@@ -288,7 +288,8 @@ class MyNetwork:
 #                timings_list.append(timings)
                 vol_extract_time = time.time() - start_vol_extract
                 vol_extract_list.append(vol_extract_time)
-
+                #print(f"Voltage extraction time {vol_extract_time}")
+                #print(f"Simulation duration {simulation_end_time}")
                 
                 for layer in resistive_layers:
                     layer.update__free_voltages(voltage_dict_free)
@@ -298,39 +299,32 @@ class MyNetwork:
                 output_values = np.array(list(outputs.values()))
                 output_list.append(output_values)
                 
-                mode = "train-voltage"
+                mode = "train"
                 #target = Y * self.boundary
                 target = Y
-                sample_losses, target_voltages = loss_fn(outputs, target, beta_r, mode = "train-voltage")#need to decide where to initialize this function - remember that loss_fn comes from the already initialized MSE
+                sample_losses, currents = loss_fn(outputs, target, beta_r, mode)#need to decide where to initialize this function - remember that loss_fn comes from the already initialized MSE
                 #predicted value
+                mode = 'test' 
                 #pred_free = loss_fn(outputs, target, beta_r, mode)
                 
                 #now I can simply zip the currents to the parameters of the last layer and repeat
-                target_voltages = target_voltages.flatten()
+                flat_currents = currents.flatten()
 
                 
-                if mode == "train-current":
-                    for k, key in enumerate(inudge_keys_list):
-                        inudge_dict[key] = flat_currents[k]    
-                        
-                if mode == "train-voltage":
-                    voltage_index = 0
-                    for key in inudge_keys_list:
-                        if key.startswith("VNUDGE"):
-                            inudge_dict[key] = target_voltages[voltage_index]
-                            voltage_index += 1
-                        elif key.startswith("RNUDGE"):
-                            inudge_dict[key] = 0.01
-                                        
+
+                for k, key in enumerate(inudge_keys_list):
+                    inudge_dict[key] = flat_currents[k]    
+                    
+                    
+                    
                 #output_layer.parameters = output_layer.update_parameters(flat_currents)
                 
-                set_currents_nudge_mode(eldo_process, inudge_dict, debug = False)
+                set_currents_nudge_mode(eldo_process, inudge_dict, debug)
                 run_eldo_simulation(eldo_process, debug)
                 #lines_of_interest = wait_for_eldos_completion(eldo_process, debug)
                 wait_for_eldos_completion_old(eldo_process, debug)
 
-                mode = 'test' 
-
+                
                 start_index += n_of_node_voltages + 3
                 end_index = start_index + n_of_node_voltages
                 
@@ -349,7 +343,7 @@ class MyNetwork:
                 outputs_n = layer.output_nudge_voltages
                 outputs_n_values = list(outputs_n.values())#the outputs are just the outputs of the last layer
                 output_list_nudge.append(outputs_n_values)   
-                sample_losses_n, voltages_n = loss_fn(outputs_n, target, beta_r, mode = "train-voltage")
+                sample_losses_n, currents_n = loss_fn(outputs_n, target, beta_r, mode = "train")
                 
                 
                 for layer in resistive_layers:
@@ -402,13 +396,12 @@ class MyNetwork:
 
         # print("Average timings (in seconds):", average_timings)
         
-        
         #plot_cosine_similarity(ratios_list1)
         ratio1_mean = np.array(np.mean(ratios_list1))
         ratio2_mean = np.array(np.mean(ratios_list2))
         ratio_list = [ratio1_mean, ratio2_mean]
         #plot_cosine_similarity(ratios_list2)
-        #reset_chi_file(eldo_process, debug = False)
+        reset_chi_file(eldo_process, debug = False)
         #reset_extract_file(eldo_process, debug = True)
         #truncate__aex_file(aex_result_file, 10)
         #clear_aex_file(aex_result_file)
@@ -419,7 +412,7 @@ class MyNetwork:
         #print(f"Average voltage extract time {mean_time_extract}")
         mean_time_simulation = np.mean(np.array(simulation_time_list))
         #print(f"Average simulation time {mean_time_simulation}")
-        output_nodes = [0, 1, 2, 3]
+        output_nodes = [0, 1, 2, 3, 4, 5]
         #gamma = None
         #plot_free_and_nudged(output_list, output_list_nudge, output_nodes, beta, gamma = None, epoch = None)
         #plot_weight_matrix_evolution_lines(weight_matrices_1, interval=10, title = "First weight matrix")    
@@ -431,8 +424,8 @@ class MyNetwork:
             #print("Successfully deleted aex file")
         
         #output_plot(output_list)
-        #plot_loss(loss_list, epoch)
-        diff1, diff2 =  output_plot(output_list)
+        plot_loss(loss_list, epoch)
+        #diff1, diff2 =  output_plot(output_list)
         disable_current_sources(eldo_process, inudge_dict, debug)
         mean_loss = np.mean(np.array(loss_list), axis = 1)
         return {
@@ -784,7 +777,7 @@ def main(): #probably objective function
 
 
     # Load the configuration file
-    with open("config_amp_imp.json", "r") as file:
+    with open("config_iris.json", "r") as file:
         config = json.load(file)
     
     # #  
@@ -833,9 +826,10 @@ def main(): #probably objective function
          
                  
         # Load and center the wine dataset
-        X_t, Y_t = prepare_moons_data(num_samples, noise=0.1, random_state=41)
+        #X_t, Y_t = prepare_moons_data(num_samples, noise=0.1, random_state=41)
         #X_t, Y_t = prepare_digits_data()
-        #X_t, Y_t = prepare_iris_data()
+        #X_t, Y_t = prepare_linear_regression(1000)
+        X_t, Y_t = prepare_iris_data()
         
         #X, Y = linear_regression(n_of_samples = 1200,a = float(1), b = float(7))
         

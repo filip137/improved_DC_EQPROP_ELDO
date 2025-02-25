@@ -1,41 +1,40 @@
 {
   "simulation_details": {
     "initializer": {
-      "init_type": "glorot",
+      "init_type": "random_uniform",
       "params": {
-        "L": 0.08,
-        "U": 10e-7,
-        "g_max": 0.01,
-        "g_min": 5e-7
+        "L": 1e-6,
+        "U": 5e-4,
+        "g_max": 1e-3,
+        "g_min": 5e-6
       }
     },
     "layers": {
-      "fully_connected": [5, 12, 4],
-      "lower_cond_bound": 1e-7,
-      "upper_cond_bound": 1
+      "fully_connected": [10, 12, 4],
+      "lower_cond_bound": 5e-6,
+      "upper_cond_bound": 1e-3
     },
     "learning_rate_factors": {
-      "lr_layer1": 1.0,
-      "lr_layer2": 1.0
+      "lr_layer1": 100.0,
+      "lr_layer2": 100.0
     },
-    "gradient_clip": 1,
     "gamma_values": {
-      "layer1": 0.0005,
-      "layer2": 0.0001
+      "layer1": 0.00003,
+      "layer2": 0.00001
     },
-    "beta": 0.4,
+    "beta": 0.0001,
     "loss": {
-      "type": "MSE"
+      "type": "MSE",
+      "boundary": 0
     },
-    "boundary": 0.5
-  },
-  "dataset_details": {
-    "n_of_epochs": 20,
-    "scale_factor": 3,
-    "noise": 0,
-    "bias": 0,
-    "num_samples": 2400,
-    "batch_size": 5
+    "dataset": {
+      "n_of_epochs": 5,
+      "scale_factor": 3,
+      "noise": 0,
+      "bias": 0,
+      "num_samples": 6400,
+      "batch_size": 10
+    }
   },
   "network_details": {
     "nonlin_parameters_ss": {
@@ -64,24 +63,19 @@
       "CD1_L": "650n",
       "CAP": "1n"
     },
-    "nonlin_parameters_perfect": {
-      "VDIODE1": 0.50,
-      "VDIODE2": -0.50,
-      "AMP": 4,
-      "CAMP": 1
+    "nonlin_parameters_perfect" : {
+    "VDIODE1" : 0.5,
+    "VDIODE2" : -0.5,
+    "AMP" : 3,
+    "CAMP" : 1
     },
     "AC_biases": {
       "source_dc_bias": 2.3
     },
     "frequency": "1Meg",
-    "simulation_type" : "DC",
-    "neuron": "perfect_amp",
     "network_files": {
       "sample_file": "/home/filip/simulations/aex_files",
       "output_dir": "/home/filip/simulations/aex_files"
     }
   }
 }
-
-
- 

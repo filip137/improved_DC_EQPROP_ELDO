@@ -19,6 +19,7 @@ import pandas as pd
 from sklearn.datasets import make_moons
 from sklearn.model_selection import train_test_split
 from sklearn.datasets import load_wine
+from sklearn.datasets import load_digits
 
 def plot_moons_data(X, Y):
     """
@@ -34,15 +35,13 @@ def plot_moons_data(X, Y):
     # Split the data by class for better visualization
     pos_indices = (Y > 0).flatten()
     neg_indices = (Y <= 0).flatten()
-    poss = max(Y)
-    negg = min(Y)
     plt.figure(figsize=(8, 6))
     # Plot positive class
     plt.scatter(X_first_two[:,0][pos_indices], X_first_two[:,1][pos_indices],
-                color='blue', label=f'Positive Class {poss}', alpha=0.7)
+                color='blue', label=f'Positive Class ', alpha=0.7)
     # Plot negative class
     plt.scatter(X_first_two[:,0][neg_indices], X_first_two[:,1][neg_indices],
-                color='red', label=f'Negative Class {negg}', alpha=0.7)
+                color='red', label=f'Negative Class ', alpha=0.7)
     
     plt.title('Moons Dataset Visualization (First Two Features)')
     plt.xlabel('X[0]')
@@ -58,20 +57,49 @@ def prepare_moons_data(n_samples, noise=0.1, random_state=42):
     X, Y = make_moons(n_samples=n_samples, noise=noise, random_state=random_state)
     
     # Center X so that each feature has mean ~ 0
-    X_centered = X - np.mean(X, axis=0)
+    #X_centered = X - np.mean(X, axis=0)
     
 
     
-    return X_centered, Y
+    return X, Y
 
+def prepare_iris_data(random_state=42):
+    iris_data = load_iris()
+    X = iris_data['data']   # shape: (n_samples, n_features)
+    Y = iris_data['target'] # shape: (n_samples,)
+    
+    
+    return X, Y
+
+def prepare_linear_regression(n_of_samples):
+    x1 = np.ones(n_of_samples)
+    x2 = np.ones(n_of_samples)
+    y1 = 0.15 * x1 + 0.2 * x2
+    y2 = 0.25 * x1 + 0.1 * x2
+    X = np.column_stack((x1,x2))
+    Y = np.column_stack((y1,y2))
+    return X, Y
+
+def prepare_digits_data():
+    """
+    Loads the digits dataset and returns the features and labels.
+    
+    Returns:
+        X (ndarray): Feature data.
+        y (ndarray): Labels.
+    """
+    digits = load_digits()
+    X = digits.data
+    y = digits.target
+    return X, y
 
 def prepare_simple_dataset(n_samples):
     X = np.ones((n_samples, 3))
-    X[:, 0] = 0.6
-    X[:, 1] = 0.3
+    X[:, 0] = -0.2
+    X[:, 1] = -0.1
     X[:, 0] = 0
     Y = np.zeros((n_samples, 3))
-    Y[:, 2] = 0
+    Y[:, 2] = 1
     return X, Y
 
 
@@ -91,7 +119,6 @@ def prepare_wine_data(random_state=42):
     X = wine_data['data']   # shape: (n_samples, n_features)
     Y = wine_data['target'] # shape: (n_samples,)
     
-    # Center X so that each feature has a mean ~ 0
     
     return X, Y
    
@@ -123,23 +150,120 @@ def generate_2_bias_pos_neg_inputs(X, Y, scale_factor, bias, output_scale = 1):
 
 
 
-def onehot_pos_neg_inputs(X, Y, scale_factor, bias, output_scale = 1):
+def onehot_pos_neg_inputs_1bias(X, Y, scale_factor, bias, output_scale=1):
     # Scale positive and negative inputs
     X_pos = X * scale_factor
     X_neg = -X * scale_factor
-    X_bias_pos = bias*np.ones((X_pos.shape[0],1))
-    X_bias_neg = -bias*np.ones((X_pos.shape[0],1))
+    X_bias_pos = bias * np.ones((X_pos.shape[0], 1))
     
     # Combine inputs
-    X_in = np.hstack((X_pos, X_neg, X_bias_pos, X_bias_neg))
+    X_in = np.hstack((X_pos, X_neg, X_bias_pos))
     
     # Scale output
     Y_scaled = Y * output_scale
 
-    # Convert Y to one-hot encoding
-    num_classes = np.max(Y_scaled) + 1  # Assuming classes start from 0
-    Y_one_hot = np.eye(num_classes)[Y_scaled.astype(int)]
+    # Only one-hot encode if Y is not already one-hot encoded.
+    # If Y is a 2D array with more than one column, assume it is already one-hot encoded.
+    if isinstance(Y_scaled, np.ndarray) and Y_scaled.ndim == 2 and Y_scaled.shape[1] > 1:
+        Y_one_hot = Y_scaled
+    else:
+        # Ensure Y is a 1D array of labels (handles both 1D arrays and (n_samples,1) shaped arrays)
+        Y_labels = Y_scaled.flatten()
+        num_classes = int(np.max(Y_labels)) + 1  # Assuming classes start from 0
+        Y_one_hot = np.eye(num_classes)[Y_labels.astype(int)]
+    
+    return X_in, Y_one_hot
 
+
+def onehot_pos_neg_inputs_1bias_double_input(X, Y, bias, output_scale=1):
+    # Scale positive and negative inputs
+    X_duplicated = np.repeat(X, 1, axis = 0)
+    X_pos = X_duplicated
+    X_neg = -X_duplicated
+    X_bias_pos = bias * np.ones((X_duplicated.shape[0], 1))
+    
+    # Combine inputs
+    X_in = np.hstack((X_pos, X_neg, X_bias_pos))
+    
+    # Scale output
+    Y_duplicated = np.repeat(Y, 1, axis = 0)
+
+
+    
+    # Only one-hot encode if Y is not already one-hot encoded.
+    # If Y is a 2D array with more than one column, assume it is already one-hot encoded.
+    if isinstance(Y_duplicated, np.ndarray) and Y_duplicated.ndim == 2 and Y_duplicated.shape[1] > 1:
+        Y_one_hot = Y_duplicated
+    else:
+        # Ensure Y is a 1D array of labels (handles both 1D arrays and (n_samples,1) shaped arrays)
+        Y_labels = Y_duplicated.flatten()
+        num_classes = int(np.max(Y_labels)) + 1  # Assuming classes start from 0
+        Y_one_hot = np.eye(num_classes)[Y_labels.astype(int)]
+    
+    return X_in, Y_one_hot
+
+
+
+def onehot_pos_neg_4inputs_doublebias(X, Y, scale_factor, bias, output_scale=1):
+    # Scale positive and negative inputs
+    X_pos = X * scale_factor
+    X_neg = -X * scale_factor
+    X_bias_pos = bias * np.ones((X_pos.shape[0], 1))
+    X_bias_neg = - bias * np.ones((X_pos.shape[0], 1))
+    
+    X_pos2 = scale_factor - X_pos
+    X_neg2 = -X_pos2
+    # Combine inputs
+    X_in = np.hstack((X_pos, X_neg, X_pos2, X_neg2, X_bias_pos, X_bias_neg))
+    
+    # Scale output
+    Y_scaled = Y * output_scale
+
+    # Check if Y is already one-hot encoded:
+    # If Y is a 2D array with more than one column, assume it is already one-hot encoded.
+    if isinstance(Y_scaled, np.ndarray) and Y_scaled.ndim == 2 and Y_scaled.shape[1] > 1:
+        Y_one_hot = Y_scaled
+    else:
+        # Convert Y to one-hot encoding assuming Y contains class labels (e.g., shape (n_samples,) or (n_samples,1))
+        Y_labels = Y_scaled.flatten()  # Ensure Y is a 1D array of labels
+        num_classes = int(np.max(Y_labels)) + 1  # Assuming classes start from 0
+        Y_one_hot = np.eye(num_classes)[Y_labels.astype(int)]
+    
+    return X_in, Y_one_hot
+
+
+def linear_regression(n_of_samples,a, b):
+    X1 = a * np.ones((n_of_samples, 1))
+    X2 = b * np.ones((n_of_samples, 1))
+    X = np.hstack((X1, X2))
+    Y = np.hstack((0 * np.ones((n_of_samples, 1)), 1 * np.ones((n_of_samples, 1))))
+    return X, Y
+
+def onehot_pos_neg_4inputs_singlebias(X, Y, scale_factor, bias, output_scale=1):
+    # Scale positive and negative inputs
+    X_pos = X 
+    X_neg = -X 
+    X_bias_pos = bias * np.ones((X_pos.shape[0], 1))
+    #X_bias_neg = - bias * np.ones((X_pos.shape[0], 1))
+    
+    X_pos2 = - X_pos
+    X_neg2 = -X_pos2
+    # Combine inputs
+    X_in = scale_factor * np.hstack((X_pos, X_neg, X_pos2, X_neg2, X_bias_pos))
+    
+    # Scale output
+    Y_scaled = Y * output_scale
+
+    # Check if Y is already one-hot encoded:
+    # If Y is a 2D array with more than one column, assume it is already one-hot encoded.
+    if isinstance(Y_scaled, np.ndarray) and Y_scaled.ndim == 2 and Y_scaled.shape[1] > 1:
+        Y_one_hot = Y_scaled
+    else:
+        # Convert Y to one-hot encoding assuming Y contains class labels (e.g., shape (n_samples,) or (n_samples,1))
+        Y_labels = Y_scaled.flatten()  # Ensure Y is a 1D array of labels
+        num_classes = int(np.max(Y_labels)) + 1  # Assuming classes start from 0
+        Y_one_hot = np.eye(num_classes)[Y_labels.astype(int)]
+    
     return X_in, Y_one_hot
 
 
@@ -147,9 +271,11 @@ def onehot_pos_neg_inputs(X, Y, scale_factor, bias, output_scale = 1):
 def generate_const_biased_pos_neg_inputs(X, Y, scale_factor, bias):
     X_pos =  X * scale_factor 
     X_neg = -X * scale_factor
+    X_pos2 = 1 - X_pos
+    X_neg2 = 1 - X_neg
     X_bias_pos = bias*np.ones((X_pos.shape[0],1))
     X_bias_neg = -bias*np.ones((X_pos.shape[0],1))
-    X_in = np.hstack((X_pos, X_neg, X_bias_pos, X_bias_neg))
+    X_in = np.hstack((X_pos, X_neg, X_pos2, X_neg2, X_bias_pos, X_bias_neg))
     return X_in, Y    
 
 

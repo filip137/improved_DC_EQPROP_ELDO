@@ -8,6 +8,7 @@ import signal
 import os
 import sys
 import datetime
+import numpy as np
 
 def generate_filename(base_path, extension=".cir", identifier=None):
     """
@@ -34,6 +35,38 @@ def generate_filename(base_path, extension=".cir", identifier=None):
     
     return path
 
+
+def compute_cosine_similarity(deltaG, W_before, W_after):
+    """
+    Computes the reduction ratios for the gradient update and the weight matrix.
+    
+    Parameters:
+        deltaG (np.array): Original gradient update.
+        deltaG_clipped (np.array): Clipped gradient update.
+        W_before (np.array): Weight matrix before the update.
+        W_after (np.array): Weight matrix after applying the clipped update and bounds clipping.
+    
+    Returns:
+        dict: A dictionary with keys:
+            - 'gradient_reduction_ratio': norm(deltaG_clipped) / norm(deltaG)
+            - 'weight_reduction_ratio': norm(W_after) / norm(W_before)
+    """
+    # Compute norms for the gradient update
+    deltag_arr = deltaG.flatten()
+    deltaw_arr = (W_before - W_after).flatten()
+    
+    # Compute the dot product
+    dot_product = np.dot(deltag_arr, deltaw_arr)
+    
+    # Compute the norms of the vectors
+    norm_deltag_arr = np.linalg.norm(deltag_arr)
+    norm_deltaw_arr = np.linalg.norm(deltaw_arr)
+    
+    # Avoid division by zero
+    epsilon = 1e-10
+    cosine_sim = dot_product / ((norm_deltag_arr * norm_deltaw_arr))
+    
+    return cosine_sim
 
 def create_filenames(network_config):
     """
@@ -165,7 +198,215 @@ def delete_file_with_chi_extension(sample_file):
         print(f"File {chi_file} does not exist.")
 
 
-def parse_aex_file_no_end(filename, start_index, simulation_type="AC"):
+
+def parse_aex_file_no_end(filename, start_index, simulation_type, voltage_dict_free):
+    # Keep track of which keys have been updated
+    updated_keys = set()
+
+    current_index = 0
+    with open(filename, 'r') as file:
+        for line in file:
+            current_index += 1
+
+            # Skip lines until we reach the starting index
+            if current_index < start_index:
+                continue
+
+            stripped_line = line.strip()
+
+            # Break out of the loop if a blank line is encountered
+            if stripped_line == "":
+                break
+
+            if simulation_type == "DC":
+                if stripped_line.startswith("*V("):
+                    parts = stripped_line.split()
+                    # Extract node name and value
+                    node_name = parts[0][3:-1].strip("'\"")
+                    node_value = float(parts[2])
+                    if node_name in voltage_dict_free:
+                        voltage_dict_free[node_name] = node_value
+                        updated_keys.add(node_name)
+
+            elif simulation_type == "AC":
+                if stripped_line.startswith("*VR("):
+                    parts = stripped_line.split()
+                    node_name = parts[0][4:-1].strip("'\"")
+                    node_value = float(parts[2])
+                    if node_name in voltage_dict_free:
+                        voltage_dict_free[node_name] = node_value
+                        updated_keys.add(node_name)
+
+            elif simulation_type == "FSST":
+                if stripped_line.startswith("*YVAL("):
+                    parts = stripped_line.split()
+                    # Example: "*YVAL(V(V_OUT_0_1),10MEG)"
+                    signal_str = parts[0]
+                    start_idx = signal_str.find('V(') + 2  # position after 'V('
+                    end_idx = signal_str.find(')', start_idx)
+                    node_name = signal_str[start_idx:end_idx].split(',')[0]
+                    node_value = float(parts[-1])
+                    if node_name in voltage_dict_free:
+                        voltage_dict_free[node_name] = node_value
+                        updated_keys.add(node_name)
+
+    # After processing, ensure that all keys in voltage_dict_free were updated.
+    missing_keys = set(voltage_dict_free.keys()) - updated_keys
+    if missing_keys:
+        raise ValueError(f"Not all keys were updated. Missing keys: {missing_keys}")
+
+    return voltage_dict_free
+
+
+def parse_aex_file_from_end(filename, n_of_node_voltages, simulation_type, voltage_dict_free):
+    # Keep track of which keys have been updated
+    updated_keys = set()
+
+    # Read the entire file into a list of lines.
+    with open(filename, 'r') as file:
+        lines = file.readlines()
+        
+    # Collect the last n_of_node_voltages non-blank lines by iterating backwards.
+    selected_lines = []
+    count = 0
+    for line in reversed(lines):
+        # If we hit a blank line, stop processing (like the original function).
+        if line.strip() == "":
+            break
+        selected_lines.append(line)
+        count += 1
+        if count >= n_of_node_voltages:
+            break
+
+    # Reverse the list so that the lines are processed in the order they appear in the file.
+    for line in reversed(selected_lines):
+        stripped_line = line.strip()
+
+        if simulation_type == "DC":
+            if stripped_line.startswith("*V("):
+                parts = stripped_line.split()
+                # Extract node name and value
+                node_name = parts[0][3:-1].strip("'\"")
+                node_value = float(parts[2])
+                if node_name in voltage_dict_free:
+                    voltage_dict_free[node_name] = node_value
+                    updated_keys.add(node_name)
+
+        elif simulation_type == "AC":
+            if stripped_line.startswith("*VR("):
+                parts = stripped_line.split()
+                node_name = parts[0][4:-1].strip("'\"")
+                node_value = float(parts[2])
+                if node_name in voltage_dict_free:
+                    voltage_dict_free[node_name] = node_value
+                    updated_keys.add(node_name)
+
+        elif simulation_type == "FSST":
+            if stripped_line.startswith("*YVAL("):
+                parts = stripped_line.split()
+                # Example: "*YVAL(V(V_OUT_0_1),10MEG)"
+                signal_str = parts[0]
+                start_idx = signal_str.find('V(') + 2  # position after 'V('
+                end_idx = signal_str.find(')', start_idx)
+                node_name = signal_str[start_idx:end_idx].split(',')[0]
+                node_value = float(parts[-1])
+                if node_name in voltage_dict_free:
+                    voltage_dict_free[node_name] = node_value
+                    updated_keys.add(node_name)
+
+    # After processing, ensure that all keys in voltage_dict_free were updated.
+    missing_keys = set(voltage_dict_free.keys()) - updated_keys
+    if missing_keys:
+        raise ValueError(f"Not all keys were updated. Missing keys: {missing_keys}")
+
+    return voltage_dict_free
+
+def parse_aex_file_from_end_timed(filename, n_of_node_voltages, simulation_type, voltage_dict_free, seek_position = None):
+    timings = []  # List to store timings for each part.
+    start_total = time.perf_counter()
+    
+    # Part 1: Read the entire file into a list of lines.
+    start_read = time.perf_counter()
+    with open(filename, 'r') as file:
+        file.seek(seek_position)
+        lines = file.readlines()
+    end_read = time.perf_counter()
+    read_time = end_read - start_read
+    timings.append(read_time)
+    
+    # Part 2: Collect the last n_of_node_voltages non-blank lines by iterating backwards.
+    start_collect = time.perf_counter()
+    selected_lines = []
+    count = 0
+    for line in reversed(lines):
+        if line.strip() == "":
+            break
+        selected_lines.append(line)
+        count += 1
+        if count >= n_of_node_voltages:
+            break
+    end_collect = time.perf_counter()
+    collect_time = end_collect - start_collect
+    timings.append(collect_time)
+    
+    # Part 3: Process the selected lines.
+    start_process = time.perf_counter()
+    updated_keys = set()
+    for line in reversed(selected_lines):
+        stripped_line = line.strip()
+        
+        if simulation_type == "DC":
+            if stripped_line.startswith("*V("):
+                parts = stripped_line.split()
+                # Extract node name and value.
+                node_name = parts[0][3:-1].strip("'\"")
+                node_value = float(parts[2])
+                if node_name in voltage_dict_free:
+                    voltage_dict_free[node_name] = node_value
+                    updated_keys.add(node_name)
+        elif simulation_type == "AC":
+            if stripped_line.startswith("*VR("):
+                parts = stripped_line.split()
+                node_name = parts[0][4:-1].strip("'\"")
+                node_value = float(parts[2])
+                if node_name in voltage_dict_free:
+                    voltage_dict_free[node_name] = node_value
+                    updated_keys.add(node_name)
+        elif simulation_type == "FSST":
+            if stripped_line.startswith("*YVAL("):
+                parts = stripped_line.split()
+                signal_str = parts[0]
+                start_idx = signal_str.find('V(') + 2  # position after 'V('
+                end_idx = signal_str.find(')', start_idx)
+                node_name = signal_str[start_idx:end_idx].split(',')[0]
+                node_value = float(parts[-1])
+                if node_name in voltage_dict_free:
+                    voltage_dict_free[node_name] = node_value
+                    updated_keys.add(node_name)
+    end_process = time.perf_counter()
+    process_time = end_process - start_process
+    timings.append(process_time)
+    
+    # Part 4: Check for missing keys.
+    start_check = time.perf_counter()
+    missing_keys = set(voltage_dict_free.keys()) - updated_keys
+    if missing_keys:
+        raise ValueError(f"Not all keys were updated. Missing keys: {missing_keys}")
+    end_check = time.perf_counter()
+    check_time = end_check - start_check
+    timings.append(check_time)
+    
+    total_time = time.perf_counter() - start_total
+    timings.append(total_time)
+    
+    # Return the timings list.
+    return timings
+
+
+
+
+
+def parse_aex_file_no_end_old(filename, start_index, simulation_type):
     # Dictionary to store extracted data
     parsed_data = {}
 
@@ -275,14 +516,27 @@ def get_eldo_pids(eldo_identifier):
 
 def clear_aex_file(file_path):
     """
-    Deletes all lines in the specified .aex file.
+    Deletes all lines in the specified .aex file after printing its size.
     
     Parameters:
         file_path (str): Path to the .aex file.
     """
+    # Get and print the file size in bytes
+    file_size = os.path.getsize(file_path)
+    print(f"File size before clearing: {file_size} bytes")
+    
+    # Open in 'w' mode to clear the file
     with open(file_path, 'w') as file:
-        pass  # Opening in 'w' mode clears the file
-
+        # Optionally, force a flush to disk.
+        file.flush()
+        os.fsync(file.fileno())
+    
+    # Give a short delay for the OS to update the file metadata.
+    time.sleep(0.05)
+    
+    # Check the file size after clearing
+    new_size = os.path.getsize(file_path)
+    print(f"File size after clearing: {new_size} bytes")
 
 def truncate__aex_file(file_path, keep_size=0):
     """
@@ -458,6 +712,22 @@ def wait_for_eldos_completion(process, debug):
     if debug: print("Captured lines have been written to captured_voltages.txt.")
     return lines_of_interest
 
+
+def wait_for_eldos_completion_old(process, debug):
+    """
+    Waits until the specified completion message is found in the process output.
+    """
+    completion_message = "Eldo interactive runs completed."
+
+    while True:
+        line = process.stdout.readline().strip()
+        if line:
+            if debug: print(f"Reading output: {line}")
+            if completion_message in line:
+             #   print("Completion message detected.")
+                break
+
+
 def extract_voltage_from_list(voltage_list, voltage_dict):
     for line in voltage_list:
         _node, eq, value, unit = line.split()
@@ -509,14 +779,29 @@ def set_input_voltages(process, input_values, debug):
 def disable_current_sources(process, inudge_dict, debug):
     """Disables current sources in simulation."""
     for inudge in inudge_dict.keys():
-        eldo_command = f"SET P ({inudge}) = 0"
-        send_command_to_eldo(process, eldo_command, debug)
-
+        if inudge.startswith("INUDGE"):
+            eldo_command = f"SET P ({inudge}) = 0"
+            send_command_to_eldo(process, eldo_command, debug)
+        elif inudge.startswith("R"):
+            eldo_command = f"SET P ({inudge}) = 9999999"
+            send_command_to_eldo(process, eldo_command, debug)           
+        else:
+            continue
+            
 def set_currents_nudge_mode(process, inudge_dict, debug):
     """Sets current values in 'nudge' mode."""
     for inudge, curr in inudge_dict.items():
         eldo_command = f"SET P ({inudge}) = {curr}"
         send_command_to_eldo(process, eldo_command, debug)
+
+
+def set_voltages_nudge_mode(process, inudge_dict, target, debug):
+    """Sets current values in 'nudge' mode."""
+    for inudge, curr in inudge_dict.items():
+        
+        eldo_command = f"SET P ({inudge}) = {curr}"
+        send_command_to_eldo(process, eldo_command, debug)
+
         
 def read_eldo_output(process, stop_here, debug):
     """Reads output from the Eldo subprocess until the prompt appears, storing only the second to last line."""
@@ -531,10 +816,24 @@ def read_eldo_output(process, stop_here, debug):
                 break  # Exit the loop when the prompt is detected
     
     return line
-
+def reset_chi_file(process, debug):
+    """Runs the Eldo simulation."""
+    try:
+        send_command_to_eldo(process, "RESET FILES", debug)
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+        
+def reset_extract_file(process, debug):
+    """Runs the Eldo simulation."""
+    try:
+        send_command_to_eldo(process, "RESET EXTRACT", debug)
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}") 
+        
+        
 def run_eldo_simulation(process, debug):
     """Runs the Eldo simulation."""
     try:
-        send_command_to_eldo(process, "GO", debug)
+        send_command_to_eldo(process, "RUN", debug)
     except Exception as e:
         print(f"An unexpected error occurred: {e}")

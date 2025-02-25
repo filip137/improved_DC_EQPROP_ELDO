@@ -1,0 +1,265 @@
+#
+# A fatal error has been detected by the Java Runtime Environment:
+#
+# java.lang.OutOfMemoryError: Cannot create worker GC thread. Out of system resources.
+#
+#  Internal Error (workgroup.cpp:73), pid=194898, tid=140432100161280
+#  Error: Cannot create worker GC thread. Out of system resources.
+#
+# JRE version: 6.0_22-b04
+# Java VM: Java HotSpot(TM) 64-Bit Server VM (17.1-b03 mixed mode linux-amd64 compressed oops)
+# If you would like to submit a bug report, please visit:
+#   http://java.sun.com/webapps/bugreport/crash.jsp
+#
+
+---------------  T H R E A D  ---------------
+
+Current thread (0x00007fb8e0007800):  JavaThread "Unknown thread" [_thread_in_vm, id=194899, stack(0x00007fb8e5620000,0x00007fb8e5720000)]
+
+Stack: [0x00007fb8e5620000,0x00007fb8e5720000],  sp=0x00007fb8e571e9e0,  free space=3fa0000000000000018k
+Native frames: (J=compiled Java code, j=interpreted, Vv=VM code, C=native code)
+V  [libjvm.so+0x7306a0]
+V  [libjvm.so+0x2f31e8]
+V  [libjvm.so+0x744eba]
+V  [libjvm.so+0x666647]
+V  [libjvm.so+0x37a49c]
+V  [libjvm.so+0x70a2fb]
+V  [libjvm.so+0x709c7a]
+V  [libjvm.so+0x3b5690]
+V  [libjvm.so+0x6f1d5f]
+V  [libjvm.so+0x420060]
+
+
+---------------  P R O C E S S  ---------------
+
+Java Threads: ( => current thread )
+
+Other Threads:
+
+=>0x00007fb8e0007800 (exited) JavaThread "Unknown thread" [_thread_in_vm, id=194899, stack(0x00007fb8e5620000,0x00007fb8e5720000)]
+
+VM state:not at safepoint (not fully initialized)
+
+VM Mutex/Monitor currently owned by a thread: None
+
+Dynamic libraries:
+40000000-40009000 r-xp 00000000 fd:00 647108122                          /cao/Softs/mentor/ams/JRE/v1.6.0_22/aol/bin/java
+40108000-4010a000 rwxp 00008000 fd:00 647108122                          /cao/Softs/mentor/ams/JRE/v1.6.0_22/aol/bin/java
+4136c000-4138d000 rwxp 00000000 00:00 0                                  [heap]
+7fb878000000-7fb878021000 rwxp 00000000 00:00 0 
+7fb878021000-7fb87c000000 ---p 00000000 00:00 0 
+7fb880000000-7fb880021000 rwxp 00000000 00:00 0 
+7fb880021000-7fb884000000 ---p 00000000 00:00 0 
+7fb884000000-7fb884021000 rwxp 00000000 00:00 0 
+7fb884021000-7fb888000000 ---p 00000000 00:00 0 
+7fb888000000-7fb888021000 rwxp 00000000 00:00 0 
+7fb888021000-7fb88c000000 ---p 00000000 00:00 0 
+7fb88c000000-7fb88c021000 rwxp 00000000 00:00 0 
+7fb88c021000-7fb890000000 ---p 00000000 00:00 0 
+7fb890000000-7fb890021000 rwxp 00000000 00:00 0 
+7fb890021000-7fb894000000 ---p 00000000 00:00 0 
+7fb894000000-7fb894021000 rwxp 00000000 00:00 0 
+7fb894021000-7fb898000000 ---p 00000000 00:00 0 
+7fb898000000-7fb898021000 rwxp 00000000 00:00 0 
+7fb898021000-7fb89c000000 ---p 00000000 00:00 0 
+7fb89c000000-7fb89c021000 rwxp 00000000 00:00 0 
+7fb89c021000-7fb8a0000000 ---p 00000000 00:00 0 
+7fb8a0000000-7fb8a0021000 rwxp 00000000 00:00 0 
+7fb8a0021000-7fb8a4000000 ---p 00000000 00:00 0 
+7fb8a4000000-7fb8a4021000 rwxp 00000000 00:00 0 
+7fb8a4021000-7fb8a8000000 ---p 00000000 00:00 0 
+7fb8a8000000-7fb8a8021000 rwxp 00000000 00:00 0 
+7fb8a8021000-7fb8ac000000 ---p 00000000 00:00 0 
+7fb8ac000000-7fb8ac021000 rwxp 00000000 00:00 0 
+7fb8ac021000-7fb8b0000000 ---p 00000000 00:00 0 
+7fb8b0000000-7fb8b0021000 rwxp 00000000 00:00 0 
+7fb8b0021000-7fb8b4000000 ---p 00000000 00:00 0 
+7fb8b4000000-7fb8b4021000 rwxp 00000000 00:00 0 
+7fb8b4021000-7fb8b8000000 ---p 00000000 00:00 0 
+7fb8b8000000-7fb8b8021000 rwxp 00000000 00:00 0 
+7fb8b8021000-7fb8bc000000 ---p 00000000 00:00 0 
+7fb8bc000000-7fb8bc021000 rwxp 00000000 00:00 0 
+7fb8bc021000-7fb8c0000000 ---p 00000000 00:00 0 
+7fb8c0000000-7fb8c0021000 rwxp 00000000 00:00 0 
+7fb8c0021000-7fb8c4000000 ---p 00000000 00:00 0 
+7fb8c4000000-7fb8c4021000 rwxp 00000000 00:00 0 
+7fb8c4021000-7fb8c8000000 ---p 00000000 00:00 0 
+7fb8c8000000-7fb8c8021000 rwxp 00000000 00:00 0 
+7fb8c8021000-7fb8cc000000 ---p 00000000 00:00 0 
+7fb8cc000000-7fb8cc021000 rwxp 00000000 00:00 0 
+7fb8cc021000-7fb8d0000000 ---p 00000000 00:00 0 
+7fb8d0000000-7fb8d0021000 rwxp 00000000 00:00 0 
+7fb8d0021000-7fb8d4000000 ---p 00000000 00:00 0 
+7fb8d4000000-7fb8d4021000 rwxp 00000000 00:00 0 
+7fb8d4021000-7fb8d8000000 ---p 00000000 00:00 0 
+7fb8d8000000-7fb8d8021000 rwxp 00000000 00:00 0 
+7fb8d8021000-7fb8dc000000 ---p 00000000 00:00 0 
+7fb8dc1f2000-7fb8dc1f3000 ---p 00000000 00:00 0 
+7fb8dc1f3000-7fb8dc2f3000 rwxp 00000000 00:00 0 
+7fb8dc2f3000-7fb8dc2f4000 ---p 00000000 00:00 0 
+7fb8dc2f4000-7fb8dc3f4000 rwxp 00000000 00:00 0 
+7fb8dc3f4000-7fb8dc3f5000 ---p 00000000 00:00 0 
+7fb8dc3f5000-7fb8dc4f5000 rwxp 00000000 00:00 0 
+7fb8dc4f5000-7fb8dc4f6000 ---p 00000000 00:00 0 
+7fb8dc4f6000-7fb8dc5f6000 rwxp 00000000 00:00 0 
+7fb8dc5f6000-7fb8dc5f7000 ---p 00000000 00:00 0 
+7fb8dc5f7000-7fb8dc6f7000 rwxp 00000000 00:00 0 
+7fb8dc6f7000-7fb8dc6f8000 ---p 00000000 00:00 0 
+7fb8dc6f8000-7fb8dc7f8000 rwxp 00000000 00:00 0 
+7fb8dc7f8000-7fb8dc7f9000 ---p 00000000 00:00 0 
+7fb8dc7f9000-7fb8dc8f9000 rwxp 00000000 00:00 0 
+7fb8dc8f9000-7fb8dc8fa000 ---p 00000000 00:00 0 
+7fb8dc8fa000-7fb8dc9fa000 rwxp 00000000 00:00 0 
+7fb8dc9fa000-7fb8dc9fb000 ---p 00000000 00:00 0 
+7fb8dc9fb000-7fb8dcafb000 rwxp 00000000 00:00 0 
+7fb8dcafb000-7fb8dcafc000 ---p 00000000 00:00 0 
+7fb8dcafc000-7fb8dcbfc000 rwxp 00000000 00:00 0 
+7fb8dcbfc000-7fb8dcbfd000 ---p 00000000 00:00 0 
+7fb8dcbfd000-7fb8dccfd000 rwxp 00000000 00:00 0 
+7fb8dccfd000-7fb8dccfe000 ---p 00000000 00:00 0 
+7fb8dccfe000-7fb8dcdfe000 rwxp 00000000 00:00 0 
+7fb8dcdfe000-7fb8dcdff000 ---p 00000000 00:00 0 
+7fb8dcdff000-7fb8dceff000 rwxp 00000000 00:00 0 
+7fb8dceff000-7fb8dcf00000 ---p 00000000 00:00 0 
+7fb8dcf00000-7fb8dd270000 rwxp 00000000 00:00 0 
+7fb8dd270000-7fb8e0046000 rwxp 00000000 00:00 0 
+7fb8e0046000-7fb8e4000000 ---p 00000000 00:00 0 
+7fb8e4082000-7fb8e4083000 ---p 00000000 00:00 0 
+7fb8e4083000-7fb8e4183000 rwxp 00000000 00:00 0 
+7fb8e4183000-7fb8e4184000 ---p 00000000 00:00 0 
+7fb8e4184000-7fb8e4284000 rwxp 00000000 00:00 0 
+7fb8e4284000-7fb8e4285000 ---p 00000000 00:00 0 
+7fb8e4285000-7fb8e4385000 rwxp 00000000 00:00 0 
+7fb8e4385000-7fb8e4386000 ---p 00000000 00:00 0 
+7fb8e4386000-7fb8e4486000 rwxp 00000000 00:00 0 
+7fb8e4486000-7fb8e4487000 ---p 00000000 00:00 0 
+7fb8e4487000-7fb8e4587000 rwxp 00000000 00:00 0 
+7fb8e4587000-7fb8e4588000 ---p 00000000 00:00 0 
+7fb8e4588000-7fb8e4688000 rwxp 00000000 00:00 0 
+7fb8e4688000-7fb8e4689000 ---p 00000000 00:00 0 
+7fb8e4689000-7fb8e4789000 rwxp 00000000 00:00 0 
+7fb8e4789000-7fb8e478a000 ---p 00000000 00:00 0 
+7fb8e478a000-7fb8e488a000 rwxp 00000000 00:00 0 
+7fb8e488a000-7fb8e488b000 ---p 00000000 00:00 0 
+7fb8e488b000-7fb8e498b000 rwxp 00000000 00:00 0 
+7fb8e498b000-7fb8e498c000 ---p 00000000 00:00 0 
+7fb8e498c000-7fb8e4a8c000 rwxp 00000000 00:00 0 
+7fb8e4a8c000-7fb8e4a8d000 ---p 00000000 00:00 0 
+7fb8e4a8d000-7fb8e4b8d000 rwxp 00000000 00:00 0 
+7fb8e4b8d000-7fb8e4b9b000 r-xp 00000000 fd:00 87205417                   /cao/Softs/mentor/ams/JRE/v1.6.0_22/aol/lib/amd64/libzip.so
+7fb8e4b9b000-7fb8e4c9d000 ---p 0000e000 fd:00 87205417                   /cao/Softs/mentor/ams/JRE/v1.6.0_22/aol/lib/amd64/libzip.so
+7fb8e4c9d000-7fb8e4ca0000 rwxp 00010000 fd:00 87205417                   /cao/Softs/mentor/ams/JRE/v1.6.0_22/aol/lib/amd64/libzip.so
+7fb8e4ca0000-7fb8e4ca1000 rwxp 00000000 00:00 0 
+7fb8e4ca1000-7fb8e4cad000 r-xp 00000000 fd:00 268516897                  /usr/lib64/libnss_files-2.17.so
+7fb8e4cad000-7fb8e4eac000 ---p 0000c000 fd:00 268516897                  /usr/lib64/libnss_files-2.17.so
+7fb8e4eac000-7fb8e4ead000 r-xp 0000b000 fd:00 268516897                  /usr/lib64/libnss_files-2.17.so
+7fb8e4ead000-7fb8e4eae000 rwxp 0000c000 fd:00 268516897                  /usr/lib64/libnss_files-2.17.so
+7fb8e4eae000-7fb8e4eb4000 rwxp 00000000 00:00 0 
+7fb8e4eb4000-7fb8e4ebb000 r-xp 00000000 fd:00 87205346                   /cao/Softs/mentor/ams/JRE/v1.6.0_22/aol/lib/amd64/native_threads/libhpi.so
+7fb8e4ebb000-7fb8e4fbc000 ---p 00007000 fd:00 87205346                   /cao/Softs/mentor/ams/JRE/v1.6.0_22/aol/lib/amd64/native_threads/libhpi.so
+7fb8e4fbc000-7fb8e4fbe000 rwxp 00008000 fd:00 87205346                   /cao/Softs/mentor/ams/JRE/v1.6.0_22/aol/lib/amd64/native_threads/libhpi.so
+7fb8e4fbe000-7fb8e4fbf000 rwxp 00000000 00:00 0 
+7fb8e4fbf000-7fb8e4fd6000 r-xp 00000000 fd:00 268516889                  /usr/lib64/libnsl-2.17.so
+7fb8e4fd6000-7fb8e51d5000 ---p 00017000 fd:00 268516889                  /usr/lib64/libnsl-2.17.so
+7fb8e51d5000-7fb8e51d6000 r-xp 00016000 fd:00 268516889                  /usr/lib64/libnsl-2.17.so
+7fb8e51d6000-7fb8e51d7000 rwxp 00017000 fd:00 268516889                  /usr/lib64/libnsl-2.17.so
+7fb8e51d7000-7fb8e51d9000 rwxp 00000000 00:00 0 
+7fb8e51d9000-7fb8e5201000 r-xp 00000000 fd:00 87205364                   /cao/Softs/mentor/ams/JRE/v1.6.0_22/aol/lib/amd64/libjava.so
+7fb8e5201000-7fb8e5301000 ---p 00028000 fd:00 87205364                   /cao/Softs/mentor/ams/JRE/v1.6.0_22/aol/lib/amd64/libjava.so
+7fb8e5301000-7fb8e5308000 rwxp 00028000 fd:00 87205364                   /cao/Softs/mentor/ams/JRE/v1.6.0_22/aol/lib/amd64/libjava.so
+7fb8e5308000-7fb8e5315000 r-xp 00000000 fd:00 87205416                   /cao/Softs/mentor/ams/JRE/v1.6.0_22/aol/lib/amd64/libverify.so
+7fb8e5315000-7fb8e5414000 ---p 0000d000 fd:00 87205416                   /cao/Softs/mentor/ams/JRE/v1.6.0_22/aol/lib/amd64/libverify.so
+7fb8e5414000-7fb8e5417000 rwxp 0000c000 fd:00 87205416                   /cao/Softs/mentor/ams/JRE/v1.6.0_22/aol/lib/amd64/libverify.so
+7fb8e5417000-7fb8e541e000 r-xp 00000000 fd:00 268516909                  /usr/lib64/librt-2.17.so
+7fb8e541e000-7fb8e561d000 ---p 00007000 fd:00 268516909                  /usr/lib64/librt-2.17.so
+7fb8e561d000-7fb8e561e000 r-xp 00006000 fd:00 268516909                  /usr/lib64/librt-2.17.so
+7fb8e561e000-7fb8e561f000 rwxp 00007000 fd:00 268516909                  /usr/lib64/librt-2.17.so
+7fb8e561f000-7fb8e5623000 ---p 00000000 00:00 0 
+7fb8e5623000-7fb8e5720000 rwxp 00000000 00:00 0 
+7fb8e5720000-7fb8e5821000 r-xp 00000000 fd:00 268516887                  /usr/lib64/libm-2.17.so
+7fb8e5821000-7fb8e5a20000 ---p 00101000 fd:00 268516887                  /usr/lib64/libm-2.17.so
+7fb8e5a20000-7fb8e5a21000 r-xp 00100000 fd:00 268516887                  /usr/lib64/libm-2.17.so
+7fb8e5a21000-7fb8e5a22000 rwxp 00101000 fd:00 268516887                  /usr/lib64/libm-2.17.so
+7fb8e5a22000-7fb8e61fc000 r-xp 00000000 fd:00 87205348                   /cao/Softs/mentor/ams/JRE/v1.6.0_22/aol/lib/amd64/server/libjvm.so
+7fb8e61fc000-7fb8e62fe000 ---p 007da000 fd:00 87205348                   /cao/Softs/mentor/ams/JRE/v1.6.0_22/aol/lib/amd64/server/libjvm.so
+7fb8e62fe000-7fb8e648f000 rwxp 007dc000 fd:00 87205348                   /cao/Softs/mentor/ams/JRE/v1.6.0_22/aol/lib/amd64/server/libjvm.so
+7fb8e648f000-7fb8e64ca000 rwxp 00000000 00:00 0 
+7fb8e64ca000-7fb8e668d000 r-xp 00000000 fd:00 268516879                  /usr/lib64/libc-2.17.so
+7fb8e668d000-7fb8e688d000 ---p 001c3000 fd:00 268516879                  /usr/lib64/libc-2.17.so
+7fb8e688d000-7fb8e6891000 r-xp 001c3000 fd:00 268516879                  /usr/lib64/libc-2.17.so
+7fb8e6891000-7fb8e6893000 rwxp 001c7000 fd:00 268516879                  /usr/lib64/libc-2.17.so
+7fb8e6893000-7fb8e6898000 rwxp 00000000 00:00 0 
+7fb8e6898000-7fb8e689a000 r-xp 00000000 fd:00 268516885                  /usr/lib64/libdl-2.17.so
+7fb8e689a000-7fb8e6a9a000 ---p 00002000 fd:00 268516885                  /usr/lib64/libdl-2.17.so
+7fb8e6a9a000-7fb8e6a9b000 r-xp 00002000 fd:00 268516885                  /usr/lib64/libdl-2.17.so
+7fb8e6a9b000-7fb8e6a9c000 rwxp 00003000 fd:00 268516885                  /usr/lib64/libdl-2.17.so
+7fb8e6a9c000-7fb8e6ab3000 r-xp 00000000 fd:00 268516905                  /usr/lib64/libpthread-2.17.so
+7fb8e6ab3000-7fb8e6cb2000 ---p 00017000 fd:00 268516905                  /usr/lib64/libpthread-2.17.so
+7fb8e6cb2000-7fb8e6cb3000 r-xp 00016000 fd:00 268516905                  /usr/lib64/libpthread-2.17.so
+7fb8e6cb3000-7fb8e6cb4000 rwxp 00017000 fd:00 268516905                  /usr/lib64/libpthread-2.17.so
+7fb8e6cb4000-7fb8e6cb8000 rwxp 00000000 00:00 0 
+7fb8e6cb8000-7fb8e6cda000 r-xp 00000000 fd:00 268516872                  /usr/lib64/ld-2.17.so
+7fb8e6cff000-7fb8e6d09000 rwxp 00000000 00:00 0 
+7fb8e6d09000-7fb8e6dbf000 rwxp 00000000 00:00 0 
+7fb8e6dbf000-7fb8e6dc7000 rwxs 00000000 fd:00 364924186                  /tmp/hsperfdata_filip/194898
+7fb8e6dc7000-7fb8e6dc8000 rwxp 00000000 00:00 0 
+7fb8e6dc8000-7fb8e6dc9000 r-xp 00000000 00:00 0 
+7fb8e6dc9000-7fb8e6dcd000 rwxp 00000000 00:00 0 
+7fb8e6dcd000-7fb8e6dd4000 r-xp 00000000 fd:00 352390253                  /cao/Softs/mentor/ams/JRE/v1.6.0_22/aol/lib/amd64/jli/libjli.so
+7fb8e6dd4000-7fb8e6ed5000 ---p 00007000 fd:00 352390253                  /cao/Softs/mentor/ams/JRE/v1.6.0_22/aol/lib/amd64/jli/libjli.so
+7fb8e6ed5000-7fb8e6ed7000 rwxp 00008000 fd:00 352390253                  /cao/Softs/mentor/ams/JRE/v1.6.0_22/aol/lib/amd64/jli/libjli.so
+7fb8e6ed7000-7fb8e6ed9000 rwxp 00000000 00:00 0 
+7fb8e6ed9000-7fb8e6eda000 r-xp 00021000 fd:00 268516872                  /usr/lib64/ld-2.17.so
+7fb8e6eda000-7fb8e6edb000 rwxp 00022000 fd:00 268516872                  /usr/lib64/ld-2.17.so
+7fb8e6edb000-7fb8e6edc000 rwxp 00000000 00:00 0 
+7fffd123b000-7fffd125f000 rwxp 00000000 00:00 0                          [stack]
+7fffd134d000-7fffd134f000 r-xp 00000000 00:00 0                          [vdso]
+ffffffffff600000-ffffffffff601000 r-xp 00000000 00:00 0                  [vsyscall]
+
+VM Arguments:
+jvm_args: -DMGC_TMPDIR=/tmp -DAMS_WDBSERVER_INFO=/home/filip/.ezwave/jwdbserver.info -DAMS_WDBSERVER_TIMEOUT=60 -DEZ_HOME=/home/filip -DMGC_AMS_HOME=/cao/Softs/mentor/ams -DAMS_VCO=aol -Djava.library.path=/cao/Softs/mentor/ams/aol/lib/lib -Xrs -Xms32000M -Xmx32000M -XX:MaxPermSize=512m -XX:+UseConcMarkSweepGC -XX:+UseParNewGC -XX:+CMSParallelRemarkEnabled -XX:CMSInitiatingOccupancyFraction=30 -XX:+UseCMSInitiatingOccupancyOnly -XX:-UseGCOverheadLimit -XX:+UseStringCache -XX:+OptimizeStringConcat -XX:+UseCompressedOops 
+java_command: /cao/Softs/mentor/ams/aol/lib/wdbserver.jar
+Launcher Type: SUN_STANDARD
+
+Environment Variables:
+PATH=/cao/Softs/mentor/ams/bin:/cao/Softs/mentor/ams/devenv_tools/x86_64/2.6.18.128.el5/bin:/cao/Softs/mentor/ams/modeltech/linux_x86_64:~/miniconda3/envs/mycondaenv/bin:/home/filip/miniconda3/envs/mycondaenv/bin:/home/filip/miniconda3/condabin:/home/filip/.local/bin:/cao/DK/ST/HCMOS9A_10.9/PDK_STM_hcmos9lp_HV_M4_5V0/10.9-10/bin:/cao/DK/ST/HCMOS9A_10.9/UnicadKernel/5.0.a-00/bin:/usr/local/bin:/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/cao/DK/ST/HCMOS9A_10.9/Addon_NVM_H9A@2018.4.1/bin:/cao/Softs/cadence/SPECTRE191/tools/bin:/cao/Softs/cadence/SPECTRE191/bin:/cao/Softs/cadence/INNOVUS162/bin:/cao/Softs/mentor/ams/bin:/cao/Softs/cadence/IC617/bin:/cao/Softs/cadence/IC617/tools/bin:/cao/Softs/cadence/IC617/tools/dfII/bin:/cad/cdspvs15_23_000/tools/bin:/cad/cdspvs15_23_000/bin:/cad/cdsext17_10_000/tools/bin:/cad/cdsext17_10_000/bin:/cao/Softs/mentor/calibre/aoj_cal_2019.1_37.21/bin:/cad/hspicevN2017_12_2/hspice/bin:/cad/starrcxt_vM2016_12_SP3/amd64_starrc/bin:/cao/Softs/cadence/INNOVUS162/bin:/cao/Softs/cadence/SPECTRE191/tools/bin
+LD_LIBRARY_PATH=/cao/Softs/mentor/ams/JRE/v1.6.0_22/aol/lib/amd64/server:/cao/Softs/mentor/ams/JRE/v1.6.0_22/aol/lib/amd64:/cao/Softs/mentor/ams/JRE/v1.6.0_22/aol/../lib/amd64:/cao/Softs/mentor/ams/devenv_tools/x86_64/2.6.18.128.el5/lib64:/cao/Softs/mentor/ams/devenv_tools/x86_64/2.6.18.128.el5/lib64:/cao/Softs/mentor/ams/devenv_tools/x86_64/2.6.18.128.el5/lib:/cao/Softs/mentor/ams/devenv_tools/x86_64/2.6.18.128.el5/lib:/lib64:/cao/Softs/mentor/ams/modeltech/linux_x86_64:/cao/Softs/mentor/ams/aol/lib:/cao/Softs/cadence/IC617/tools/lib
+SHELL=/bin/bash
+DISPLAY=:2
+HOSTTYPE=x86_64-linux
+OSTYPE=linux
+MACHTYPE=x86_64
+
+Signal Handlers:
+SIGSEGV: [libjvm.so+0x731250], sa_mask[0]=0x7ffbfeff, sa_flags=0x10000004
+SIGBUS: [libjvm.so+0x731250], sa_mask[0]=0x7ffbfeff, sa_flags=0x10000004
+SIGFPE: [libjvm.so+0x5f5e30], sa_mask[0]=0x7ffbfeff, sa_flags=0x10000004
+SIGPIPE: [libjvm.so+0x5f5e30], sa_mask[0]=0x7ffbfeff, sa_flags=0x10000004
+SIGXFSZ: [libjvm.so+0x5f5e30], sa_mask[0]=0x7ffbfeff, sa_flags=0x10000004
+SIGILL: [libjvm.so+0x5f5e30], sa_mask[0]=0x7ffbfeff, sa_flags=0x10000004
+SIGUSR1: SIG_DFL, sa_mask[0]=0x00000000, sa_flags=0x00000000
+SIGUSR2: [libjvm.so+0x5f8650], sa_mask[0]=0x00000000, sa_flags=0x10000004
+SIGHUP: SIG_DFL, sa_mask[0]=0x00000000, sa_flags=0x00000000
+SIGINT: SIG_IGN, sa_mask[0]=0x00000000, sa_flags=0x00000000
+SIGTERM: SIG_DFL, sa_mask[0]=0x00000000, sa_flags=0x00000000
+SIGQUIT: SIG_DFL, sa_mask[0]=0x00000000, sa_flags=0x00000000
+
+
+---------------  S Y S T E M  ---------------
+
+OS:CentOS Linux release 7.8.2003 (Core)
+
+uname:Linux 3.10.0-1127.19.1.el7.x86_64 #1 SMP Tue Aug 25 17:23:54 UTC 2020 x86_64
+libc:glibc 2.17 NPTL 2.17 
+rlimit: STACK 10240k, CORE 0k, NPROC 4096, NOFILE 4096, AS infinity
+load average:32.24 30.29 24.35
+
+CPU:total 72 (32 cores per cpu, 2 threads per core) family 6 model 85 stepping 7, cmov, cx8, fxsr, mmx, sse, sse2, sse3, ssse3, sse4.1, sse4.2, popcnt, ht
+
+Memory: 4k page, physical 97402164k(361896k free), swap 4194300k(3451900k free)
+
+vm_info: Java HotSpot(TM) 64-Bit Server VM (17.1-b03) for linux-amd64 JRE (1.6.0_22-b04), built on Sep 15 2010 01:07:59 by "java_re" with gcc 3.2.2 (SuSE Linux)
+
+time: Mon Feb 17 15:51:51 2025
+elapsed time: 0 seconds
+
