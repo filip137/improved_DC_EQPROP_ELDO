@@ -81,6 +81,7 @@ class InputLayer(BaseLayer):
         for i in range(1, self.n_of_inputs + 1):
             if self.simulation_type == "FSST":
                 v_ac = f"VAC{i}"
+                self.inputs[v_ac] = 0
             if self.simulation_type == "DC":
                 v_ac = f"VDC{i}"
                 self.inputs[v_ac] = 0
@@ -218,7 +219,9 @@ class DenseLayer(BaseLayer):
  
     
         self.W = self.initialize_W()
+        self.resistor_matrix = 1/self.W
         self.deltaG = np.zeros(self.W.shape)
+        self.gradient = np.zeros(self.W.shape)
         self.gamma = gamma
         self.beta = beta
         
@@ -362,6 +365,7 @@ class DenseLayer(BaseLayer):
             beta = self.beta
         gamma = self.gamma
         deltaG =  gamma/beta * (np.square(nudge_vol_matrix_diff) - np.square(free_vol_matrix_diff)) * 1/self.lr * 1/batch_size
+        self.gradient = deltaG
         mode = "non_discrete"
         if mode == "discrete":
             step_size = 1e-2
@@ -369,7 +373,6 @@ class DenseLayer(BaseLayer):
         self.deltaG += deltaG
         #clipped_W = np.clip(W, 10e-7, None)
         #clipped_W = np.clip(W, float(self.lower_cond_bound), float(self.upper_cond_bound))
-        return self.deltaG
     
     
     
@@ -400,12 +403,12 @@ class DenseLayer(BaseLayer):
             # self.W -= learning_rate * deltaG_clipped  (for example)
         
         self.W_old = self.W
+        
         self.unclipped_W = self.W - self.deltaG_clipped
         clipped_W = np.clip(self.unclipped_W, self.lower_cond_bound, self.upper_cond_bound)
         
         self.W = clipped_W
-        return self.W
-    
+        self.resistor_matrix = 1/self.W
     
     
     
@@ -418,7 +421,7 @@ class DenseLayer(BaseLayer):
         #clipped_W = np.clip(self.W, self.lower_cond_bound, self.upper_cond_bound)
         resistor_matrix = 1/self.W
         # Step 2: Flatten the matrix into a 1D array
-        resistor_array = resistor_matrix.flatten(order = 'F')
+        resistor_array = resistor_matrix.flatten(order = 'C')
         
         # Check if the sizes match
         if len(resistor_array) != len(self.resistor_dict):
@@ -452,6 +455,7 @@ class DenseLayer(BaseLayer):
     
     
         nudge_vol_matrix_diff = np.empty((len(f_input_volt_arr),len(f_output_volt_arr)))
+        
         for i in range(len(f_input_volt_arr)):
             for j in range(len(f_output_volt_arr)):
                 nudge_vol_matrix_diff[i,j] = n_input_volt_arr[i] - n_output_volt_arr[j]
@@ -485,10 +489,9 @@ class DenseLayer(BaseLayer):
         free_vol_matrix_diff, nudge_vol_matrix_diff = self.calc_vol_difference()
         
         # Step 2: Update weights
-        self.deltaG = self.update_deltaG(free_vol_matrix_diff, nudge_vol_matrix_diff, batch_size, beta_custom)
+        self.update_deltaG(free_vol_matrix_diff, nudge_vol_matrix_diff, batch_size, beta_custom)
         
     
-        return self.deltaG
     
 class OutputLayer(BaseLayer):
     
@@ -549,7 +552,7 @@ class OutputLayer(BaseLayer):
             if idc not in source_dict:
                 source_dict[idc] = 0
             if rdc is not None and rdc not in source_dict:
-                rnudge_dict[rdc] = 9999999
+                rnudge_dict[rdc] = 99999999
                 source_dict.update(rnudge_dict)
         return source_dict  
     
@@ -563,7 +566,10 @@ class OutputLayer(BaseLayer):
                     line = f"{source} {node_name} 0 DC INUDGE_{i+1}\n"
             elif self.nudging_mode == "voltage":
                 if self.simulation_type == "FSST":
-                    line = f"{source} {node_name} 0 DC 0 SIN (0 INUDGE_{i+1} {self.freq})\n"
+                    line = []
+                    line_r = f"RN_{i+1} {node_name}N {node_name} RNUDGE_{i+1}\n"
+                    line_s = f"{source}N {node_name}N 0 DC 1 AC 100m 0 SIN (1 VNUDGE_{i+1} 1Meg)\n"
+                    line.extend([line_r, line_s])
                 elif self.simulation_type == "DC":
                     line = []
                     line_r = f"RN_{i+1} {node_name}N {node_name} RNUDGE_{i+1}\n"

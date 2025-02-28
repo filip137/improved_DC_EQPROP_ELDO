@@ -6,7 +6,7 @@ import numpy as np
         ## 
 
 class Initializer:
-    def __init__(self, init_type, params=None, L=1e-4, U=1e-1, g_min=None, g_max=None, seed = 42):
+    def __init__(self, init_type, params=None, L=1e-4, U=1e-1, g_min=None, g_max=None, seed = 40):
         self.init_type = init_type
         self.params = params if params is not None else {}
         self.L = L  # Lower bound

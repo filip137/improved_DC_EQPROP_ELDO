@@ -114,7 +114,7 @@ class MyNetwork:
             #f".AC LIST {freq}\n"
             simulation_details = (
                 
-                f".SST FUND1={freq} NHARM1=3\n"
+                f".SST FUND1={freq} NHARM1=1\n"
                 f"{vm_string}\n" ##here also append vi string if it's needed
                 ".OPTION AEX\n"
                 ".OPTION NOASCII\n"
@@ -191,7 +191,7 @@ class MyNetwork:
     
   
 
-    def free_nudged_train(self, eldo_process, X_train, Y_train, epoch, optimizer = None, debug = False):
+    def free_nudged_train(self, eldo_process, X_train, Y_train, targets, epoch, optimizer = None, debug = False):
         
         
         layers = self.layers
@@ -300,13 +300,17 @@ class MyNetwork:
                 
                 mode = "train-voltage"
                 #target = Y * self.boundary
-                target = Y
+                if targets != None:
+                    Y_index = np.argmax(Y)
+                    target = targets[Y_index]
+                else:
+                    target = (Y/4) * self.scale_factor
                 sample_losses, target_voltages = loss_fn(outputs, target, beta_r, mode = "train-voltage")#need to decide where to initialize this function - remember that loss_fn comes from the already initialized MSE
                 #predicted value
                 #pred_free = loss_fn(outputs, target, beta_r, mode)
                 
                 #now I can simply zip the currents to the parameters of the last layer and repeat
-                target_voltages = target_voltages.flatten()
+                target_voltages = - target_voltages.flatten() #FOR SOME REASON THE INPUTS ARE INVERTED
 
                 
                 if mode == "train-current":
@@ -331,15 +335,12 @@ class MyNetwork:
 
                 mode = 'test' 
 
-                start_index += n_of_node_voltages + 3
-                end_index = start_index + n_of_node_voltages
                 
                 parse_aex_file_from_end_timed(aex_result_file, n_of_node_voltages, simulation_type, voltage_dict_nudge, offset)
                  
 
 
 
-                start_index += n_of_node_voltages + 3
 
                 python_update_time = time.time
                 for layer in resistive_layers:
@@ -366,15 +367,15 @@ class MyNetwork:
                 
               
             #At the end of the batch update all resistances
-            for i, layer in enumerate(resistive_layers):
+            for j, layer in enumerate(resistive_layers):
                 layer.update_W(mode = "clip_updates", clip = self.gradient_clip)
                 layer.update_res_dict()
                 set_resistances(eldo_process, layer.resistor_dict, debug = False)
                 #time.sleep(0.01)
                 ratios = compute_cosine_similarity(layer.deltaG, layer.W_old, layer.W)
-                if i == 0:
+                if j == 0:
                     ratios_list1.append(ratios)
-                elif i == 1:
+                elif j == 1:
                     ratios_list2.append(ratios)
                 #print(f"Norm of the deltaG {np.linalg.norm(layer.deltaG, ord=2)}")
                 #print(f"finished batch {i}")
@@ -412,9 +413,13 @@ class MyNetwork:
         #reset_extract_file(eldo_process, debug = True)
         #truncate__aex_file(aex_result_file, 10)
         #clear_aex_file(aex_result_file)
+        #loss_fn(output_list, mode='test')
         predictions = loss_fn(output_list, mode='test')
         epoch_acc = np.mean(loss_fn.verify_result(Y_train, np.array(predictions)))
-        print(f"Accuracy after epoch {epoch_acc}")
+        print(epoch_acc)
+        # Convert one-hot encoded Y_train to class indices
+
+        # Compute accuracy by comparing predictions with true_labels
         mean_time_extract = np.mean(np.array(vol_extract_list))
         #print(f"Average voltage extract time {mean_time_extract}")
         mean_time_simulation = np.mean(np.array(simulation_time_list))
@@ -435,6 +440,7 @@ class MyNetwork:
         diff1, diff2 =  output_plot(output_list)
         disable_current_sources(eldo_process, inudge_dict, debug)
         mean_loss = np.mean(np.array(loss_list), axis = 1)
+        #print(mean_loss)
         return {
         "accuracy" : epoch_acc,
         "loss_list": mean_loss,
@@ -457,7 +463,7 @@ class MyNetwork:
         #     sys.exit(0)  # Exit the program
         
         if draw_grid:
-            X_in, Y = input_function(X_grid, Y_in, scale_factor = self.scale_factor, bias = self.bias, output_scale=1)
+            X_in, Y = onehot_pos_neg_inputs_1bias_double_input(X_grid, Y_in, bias = 1, output_scale=1)
             
         input_layer = self.layers[0]
         output_layer = self.layers[-1]
@@ -525,7 +531,7 @@ class MyNetwork:
         
         return binary_array
     
-    def calc_desired_outputs(self, eldo_process, X, Y, input_function, epoch, debug):
+    def calc_desired_outputs(self, eldo_process, X, Y, epoch, debug):
         input_layer = self.layers[0]
         output_layer = self.layers[-1]
         input_dict = input_layer.inputs
@@ -545,53 +551,53 @@ class MyNetwork:
         
         #clear_aex_file(aex_result_file)
 
-        if epoch == 0:
-            start_index = 4
-        else:
-            start_index = 3 
-        start_index = 3
         aex_result_file = self.aex_file_path
-
-        file_size = os.path.getsize(aex_result_file)
-        offset = file_size
-        print(f"File size before output calc: {file_size} bytes")
+        if epoch > 1:
+            file_size = os.path.getsize(aex_result_file)
+            offset = file_size
+        else:
+            offset = 0
         
+        # Run simulations for the first 200 samples in X
+        X_in = X[:200]
         
-        for X in X_in:
+        for X_sample in X_in:  # Renamed variable to avoid confusion with X (the dataset)
             
             for i, key in enumerate(input_keys_list):
-                input_dict[key] = X[i]  # Directly assign the value from X to the corresponding key
-            
+                input_dict[key] = X_sample[i]  # Assign the value from X_sample to the corresponding key
             
             set_input_voltages(eldo_process, input_dict, debug)
-                #move at the end
             run_eldo_simulation(eldo_process, debug)
-
+            wait_for_eldos_completion(eldo_process, debug)
             parse_aex_file_from_end_timed(aex_result_file, n_of_node_voltages, simulation_type, voltage_dict_free, offset)
             output_layer.update__free_voltages(voltage_dict_free)
             
-            outputs = output_layer.output_free_voltages #the outputs are just the outputs of the last layer
+            outputs = output_layer.output_free_voltages  # The outputs from the last layer
             output_values = list(outputs.values())
             output_list.append(output_values)
-
-
-            #prediction = self.loss_fn(output_values, mode='test') #need to decide where to initialize this function - remember that loss_fn comes from the already initialized MSE
-            #binary_prediction = self.loss_fn.binary_prediction(prediction)
-            #binary_list.extend(binary_prediction)
-            
-            # if counter > 10:
-            #     truncate__aex_file(aex_result_file, 10)
-            #     counter = 0
-            #     start_index = 3
-            # counter += 1
-        n_of_outputs = len(output_values)
-        output_array = np.array(binary_list).reshape(-1,n_of_outputs)
-        target_values = np.mean(output_array, axis = 0)
         
-        #accuracy = np.mean(np.equal(binary_array, Y_in)) * 100
-        #print(f"Accuracy: {accuracy:.2f}%")
+        # Assuming Y is a 2D array of one-hot encoded labels (each row like [1, 0] or [0, 1])
+        # Use .all(axis=1) to check complete row matches and np.where(...)[0] to get indices
+        indices0 = np.where((Y[:200] == np.array([1, 0])).all(axis=1))[0]
+        indices1 = np.where((Y[:200] == np.array([0, 1])).all(axis=1))[0]
         
-        return binary_array
+        # Convert the list of outputs to a NumPy array
+        outputs_arr = np.array(output_list)
+        
+        # Extract outputs corresponding to the two classes using the computed indices
+        X0 = outputs_arr[indices0]
+        X1 = outputs_arr[indices1]
+        
+        # Compute the mean of outputs for each class along axis 0
+        X0_mean = np.mean(X0, axis=0)
+        X1_mean = np.mean(X1, axis=0)
+        
+        # Combine the means into a target array
+        X0_target = X0_mean.reshape(2,-1)[:,0] - X0_mean.reshape(2,-1)[:,1]
+        X1_target = X1_mean.reshape(2,-1)[:,0] - X1_mean.reshape(2,-1)[:,1]
+        targets = np.array([X0_target, X1_target])
+        
+        return targets
     
 
     def draw_grid(self, eldo_process, X_val, Y_val, input_function, epoch, debug):
@@ -681,6 +687,12 @@ class MyNetwork:
         layers = []
         
         simulation_type = self.simulation_type
+        if simulation_type == "DC":
+            nonlin_parameters = network_details["nonlin_parameters_perfect"]
+        elif simulation_type == "FSST":
+            nonlin_parameters = network_details["nonlin_parameters_ss"]
+
+        
         
         input_layer = InputLayer(fc_layers[0], vdc_bias, freq, simulation_type, which_layer=0)
         layers.append(input_layer)
@@ -773,12 +785,6 @@ def predict(process, X, vol_sources, debug, resistor_value_dict, node_to_vdc, no
     return pred_outputs
     
 
-
-
-
-
-
-
 def main(): #probably objective function
 
 
@@ -797,7 +803,6 @@ def main(): #probably objective function
     ########################
     network_config = network_details["network_files"]
     input_files = create_filenames(network_config)
-    full_subfolder_path, new_sample_file, aex_file_path = input_files
     
     #Extract dataset
     dataset_config = dataset_details
@@ -819,23 +824,26 @@ def main(): #probably objective function
     
     # Initialize the network layers
     
-
-    scale_factor_list = [4]
+    scale_factor_list = [0.7, 0.8, 0.9]
     #batch_size = 32
     for scale_factor in scale_factor_list:
+        
+        full_subfolder_path, new_sample_file, aex_file_path = input_files
         #layers = initialize_network_layers(simulation_details, network_details)
-
         
         #Initialize the network
         net = MyNetwork(config, input_files, scale_factor)
         #Build the netlist
         net.build_netlist()
          
-                 
-        # Load and center the wine dataset
-        X_t, Y_t = prepare_moons_data(num_samples, noise=0.1, random_state=41)
-        #X_t, Y_t = prepare_digits_data()
-        #X_t, Y_t = prepare_iris_data()
+        simulation = "moons_simulation"
+        # Load and center the dataset
+        if simulation == "moons_simulation":
+            X_t, Y_t = prepare_moons_data(num_samples, noise=0.1, random_state=41)
+        elif simulation == "digits_simulation":
+            X_t, Y_t = prepare_digits_data()
+        elif simulation == "iris_simulation":
+            X_t, Y_t = prepare_iris_data()
         
         #X, Y = linear_regression(n_of_samples = 1200,a = float(1), b = float(7))
         
@@ -846,8 +854,8 @@ def main(): #probably objective function
 
         # Process the scaled wine data with onehot_pos_neg_inputs.
         # Note: scale_factor, bias, and output_scale should be defined previously.
-        input_function = onehot_pos_neg_inputs_1bias
-        X, Y = onehot_pos_neg_inputs_1bias_double_input(X_scaled, Y_t, bias = 1, output_scale=1)
+        input_function = onehot_pos_neg_inputs_1bias_double_input
+        X, Y = onehot_pos_neg_inputs_1bias_double_input(X_scaled, Y_t, bias = 0.2, output_scale=1)
         
 
         
@@ -884,17 +892,19 @@ def main(): #probably objective function
         initial_weights1 = net.layers[1].W
         initial_weights2 = net.layers[3].W
         
-
-        
-        draw_grid_to_plot= [1, 2, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50]
+        dynamic_outputs = False
+        targets = None
+        draw_grid_to_plot = [1, 5, 9, 29]
         for epoch in range(1, n_of_epochs +1):
             start_epoch = time.time()
             #NEED TO MANUALLY SET THEM, INITIALLY EVERYTHING IS 0
             #set_input_voltages(eldo_process, bias_dict, debug = True)
             #print(f"Starting epoch {epoch} for boundary {boundary}, batch size {batch_size} and scale factor {scale_factor}")
-            results = net.free_nudged_train(eldo_process, X_train, y_train, epoch, optimizer = None, debug = False)
-            # if epoch in draw_grid_to_plot:
-            #     net.draw_grid(eldo_process, X_train, y_train, input_function, epoch, debug = False)
+            if dynamic_outputs:
+                targets = net.calc_desired_outputs(eldo_process, X, Y, epoch= 0, debug = False)
+            results = net.free_nudged_train(eldo_process, X_train, y_train, targets, epoch, optimizer = None, debug = False)
+            if epoch in draw_grid_to_plot:
+                net.draw_grid(eldo_process, X_train, y_train, input_function, epoch, debug = False)
 
             accuracy_list.append(results["accuracy"])
             big_loss_list.append(results["loss_list"])
@@ -925,8 +935,13 @@ def main(): #probably objective function
             weight_matrices_2.append(results["weight_matrix_2"])
             
             
-            rel_change1 = compute_relative_changes(weight_matrices_1, epsilon=1e-10)
-            rel_change2 = compute_relative_changes(weight_matrices_2, epsilon=1e-10)
+            abs_change1 = compute_absolute_changes(weight_matrices_1)
+            abs_change2 = compute_absolute_changes(weight_matrices_2)
+            
+            
+            
+            
+            
             #plot_average_relative_change(rel_change1, title="Average Relative Weight Change per Epoch")
             #plot_average_relative_change(rel_change2, title="Average Relative Weight Change per Epoch")
 
@@ -938,17 +953,51 @@ def main(): #probably objective function
             
             #net.draw_grid(eldo_process, X_train, y_train, input_function, epoch, debug = False)
             #accuracy = net.free_test(eldo_process, layers, X_test, y_test, epoch, loss_fn, metrics = None, debug = False)
-        plot_accuracy(accuracy_list)
+        # Define the base directory
+        base_dir = "/home/filip/simulations/trained_models"
+        
+        # Generate a subfolder name with the current date and time
+        date_time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+        full_subfolder_path = f"{simulation}_{date_time_str}"
+        
+        # Combine the base directory with the subfolder name
+        output_dir_path = os.path.join(base_dir, full_subfolder_path)
+        os.makedirs(output_dir_path, exist_ok=True)
+                # Save the configuration to a JSON file
+        config_file_path = os.path.join(output_dir_path, "config.json")
+        with open(config_file_path, "w") as f:
+            json.dump(config, f, indent=4)
+        print(f"Configuration saved to {config_file_path}")
+        
+        # --- Save Weight Matrices ---
+        # Assume results is a dictionary containing your trained weight matrices:
+        # results["weight_matrix_1"] and results["weight_matrix_2"]
+        weights_file_path = os.path.join(output_dir_path, "weights.npz")
+        np.savez(weights_file_path, 
+                 weight_matrix_1=results["weight_matrix_1"], 
+                 weight_matrix_2=results["weight_matrix_2"])
+        print(f"Weights saved to {weights_file_path}")
+        
+        
+        
+        
+        
+        
 
-        plot_cosine_similarity(ratio1_mean_list)
-        plot_cosine_similarity(ratio2_mean_list)
-        plot_moving_averages(diff1_list, diff2_list, window_size=40)
-        plot_average_loss(big_loss_list)
-        plot_average_relative_change(rel_change1, title="Average Relative Weight Change per Epoch")
-        plot_average_relative_change(rel_change2, title="Average Relative Weight Change per Epoch")
+        plot_directory = os.path.join(output_dir_path, "plots")       
+        os.makedirs(plot_directory, exist_ok=True)
 
-        plot_weight_evolution(weight_matrices_1, title='Weight Evolution Over Epochs')
-        plot_weight_evolution(weight_matrices_2, title='Weight Evolution Over Epochs')
+        plot_accuracy(accuracy_list, plot_directory)
+        plot_cosine_similarity(ratio1_mean_list, plot_directory, title = "Cosine sim for weight matrix 1")
+        plot_cosine_similarity(ratio2_mean_list, plot_directory, title  = "Cosine sim for weight matrix 2")
+        window_size = 40
+        plot_moving_averages(diff1_list, diff2_list, window_size, plot_directory)
+        plot_average_loss(big_loss_list, plot_directory)
+        plot_average_relative_change(abs_change1, title="Average Absolute Weight Change per Epoch weightmatrix 1")
+        plot_average_relative_change(abs_change2, title="Average Absolute Weight Change per Epoch weightmatrix 2")
+
+        plot_weight_matrix_evolution_lines(weight_matrices_1, plot_directory, title='Weight Evolution Over Epochs')
+        plot_weight_matrix_evolution_lines(weight_matrices_2, plot_directory, title='Weight Evolution Over Epochs')
         delete_file_with_chi_extension(new_sample_file)
 
 

@@ -35,13 +35,13 @@ class MSE:
         
         #Number of outputs
         # Reshape into a (rows, 2) array
-        if num_output_nodes != 1:
+        if num_output_nodes % 2 == 0:
             output_nodes_voltages = output_node_voltages_values.reshape(-1, 2)
             prediction = output_nodes_voltages[:, 0] - output_nodes_voltages[:, 1] # array of predictions
             
-        elif num_output_nodes == 1:
+        elif num_output_nodes == 3:
             output_nodes_voltages = output_node_voltages_values
-            prediction = output_nodes_voltages[:, 0]
+            prediction = output_node_voltages_values
         
         if mode == 'train-current':
             losses = np.zeros(shape=(int(num_output_nodes/2), ))
@@ -86,7 +86,7 @@ class MSE:
 
 
         if mode == 'simple-train-voltage':
-            losses = np.zeros(shape=(int(num_output_nodes/2), ))
+            losses = np.zeros(shape=(int(num_output_nodes), ))
 
             voltages = np.zeros(shape=(int(num_output_nodes), 1))
             
@@ -99,7 +99,7 @@ class MSE:
 
             # loss current calculation
             #beta = np.random.choice([-1, 1]) * beta
-            voltages[:,0] = -beta * diff
+            voltages = -beta * diff
             target_voltages = output_nodes_voltages + voltages
             #currents = - beta * diff
             

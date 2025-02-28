@@ -1,7 +1,7 @@
 ###PLOTTING
 import numpy as np
 import matplotlib.pyplot as plt
-
+import os
 
 import matplotlib.pyplot as plt
 
@@ -78,16 +78,18 @@ def moving_average_np(data, window_size):
     
     return np.convolve(data, np.ones(window_size)/window_size, mode='valid')
 
-def plot_moving_averages(diff1_list, diff2_list, window_size=10):
+
+def plot_moving_averages(diff1_list, diff2_list, window_size=10, output_dir="output_file_path/plots"):
     """
-    Calculates and plots the moving averages of two lists.
+    Calculates and plots the moving averages of two lists, then saves the plot in the specified output directory.
 
     Parameters:
         diff1_list (list): First list of numerical data.
         diff2_list (list): Second list of numerical data.
         window_size (int): Window size for the moving average.
+        output_dir (str): Directory where the plot image will be saved.
     """
-    # Calculate moving averages
+    # Calculate moving averages using a helper function (assumed to be defined elsewhere)
     ma_diff1 = moving_average_np(diff1_list, window_size)
     ma_diff2 = moving_average_np(diff2_list, window_size)
     
@@ -105,15 +107,28 @@ def plot_moving_averages(diff1_list, diff2_list, window_size=10):
     plt.title(f'Moving Averages (window size = {window_size})')
     plt.legend()
     plt.grid(True)
-    plt.show()
-
-def plot_accuracy(accuracy_list):
-    """
-    Plots accuracy values from the given list.
     
+    # Ensure the output directory exists
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Construct a filename based on the window size (or any other naming convention)
+    file_name = os.path.join(output_dir, f"moving_averages_window_{window_size}.png")
+    
+    # Save the plot to the file and close the figure
+    plt.savefig(file_name)
+    plt.close()
+
+def plot_accuracy(accuracy_list, output_dir):
+    """
+    Plots accuracy values from the given list and saves the plot in the specified output directory.
+
     Args:
         accuracy_list (list or array): List of accuracy values.
+        output_dir (str): Directory where the plot image will be saved.
     """
+    # Ensure the output directory exists
+    os.makedirs(output_dir, exist_ok=True)
+    
     plt.figure(figsize=(8, 4))
     plt.plot(accuracy_list, marker='o', linestyle='-', color='b', label='Accuracy')
     plt.xlabel('Epoch')
@@ -121,8 +136,11 @@ def plot_accuracy(accuracy_list):
     plt.title('Model Accuracy over Epochs')
     plt.grid(True)
     plt.legend()
-    plt.show()
-
+    
+    # Construct the filename and save the plot
+    file_name = os.path.join(output_dir, "accuracy_plot.png")
+    plt.savefig(file_name)
+    plt.close()
 def plot_weight_matrix_evolution_lines(weight_matrices, interval, title):
     """
     Plots the evolution of all weights in the matrices over iterations.
@@ -308,20 +326,21 @@ def plot_free_and_nudged(output_list, output_list_nudge, output_nodes, beta, gam
         plt.show()
 
 
-def plot_average_loss(loss_list, title='Average Loss per Epoch', xlabel='Epoch', ylabel='Loss',
+def plot_average_loss(loss_list, output_dir, title='Average Loss per Epoch', xlabel='Epoch', ylabel='Loss',
                       marker='o', linestyle='-', color='b', grid=True):
     """
-    Computes the average loss for each epoch from a list of arrays and plots it.
+    Computes the average loss for each epoch from a list of arrays, plots it, and saves the plot in the specified directory.
     
     Parameters:
         loss_list (list of np.array): A list where each element is a NumPy array of loss values for an epoch.
         title (str): Title of the plot.
         xlabel (str): Label for the x-axis.
         ylabel (str): Label for the y-axis.
-        marker (str): Marker style for the plot (default is 'o').
-        linestyle (str): Line style for the plot (default is '-').
-        color (str): Color for the plot (default is blue, 'b').
+        marker (str): Marker style for the plot.
+        linestyle (str): Line style for the plot.
+        color (str): Color for the plot.
         grid (bool): If True, displays a grid on the plot.
+        output_dir (str): Directory where the plot image will be saved.
     """
     # Convert the list to a NumPy array and compute the mean loss per epoch
     loss_array = np.array(loss_list)
@@ -339,7 +358,16 @@ def plot_average_loss(loss_list, title='Average Loss per Epoch', xlabel='Epoch',
     if grid:
         plt.grid(True)
     plt.legend()
-    plt.show()
+    
+    # Ensure the output directory exists
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Create a filename by replacing spaces with underscores in the title
+    file_name = os.path.join(output_dir, title.replace(" ", "_") + ".png")
+    
+    # Save the plot to the file and close the figure
+    plt.savefig(file_name)
+    plt.close()
 
 
 def compute_relative_changes(weight_matrices, epsilon=1e-10):
@@ -369,6 +397,32 @@ def compute_relative_changes(weight_matrices, epsilon=1e-10):
         rel_changes.append(change)
     return rel_changes
 
+def compute_absolute_changes(weight_matrices):
+    """
+    Computes the absolute change (L2 norm) of the weights from one epoch to the next.
+    
+    Parameters
+    ----------
+    weight_matrices : list of np.ndarray
+        A list where each element is a weight matrix at a given epoch.
+        
+    Returns
+    -------
+    abs_changes : list of float
+        A list where each element is the L2 norm of the difference between 
+        the weight matrices of consecutive epochs.
+    """
+    abs_changes = []
+    for t in range(1, len(weight_matrices)):
+        prev = weight_matrices[t-1]
+        curr = weight_matrices[t]
+        change_norm = np.linalg.norm(curr - prev)
+        abs_changes.append(change_norm)
+    return abs_changes
+
+
+
+
 def plot_average_relative_change(rel_changes, title="Average Relative Weight Change per Epoch"):
     """
     Plots a continuous line graph of the average (absolute) relative change per epoch.
@@ -395,47 +449,50 @@ def plot_average_relative_change(rel_changes, title="Average Relative Weight Cha
 
 
 
-def plot_weight_evolution(weight_matrices, title='Weight Evolution Over Epochs'):
+def plot_weight_matrix_evolution_lines(weight_matrices, output_dir, title):
     """
-    Plots the evolution of individual weights and the mean weight value across epochs.
-    
-    Parameters
-    ----------
-    weight_matrices : list of np.ndarray
-        List where each element is a weight matrix from a given epoch.
-    title : str, optional
-        Title for the overall figure (default is 'Weight Evolution Over Epochs').
+    Plots the evolution of all weights in the matrices over iterations and saves the plot in the specified output directory.
+
+    Parameters:
+        weight_matrices (list of 2D arrays): List of weight matrices (one for each iteration).
+        interval (int): Interval of iterations to plot (plots every 'interval' iteration).
+        title (str): Title of the plot.
+        output_dir (str): Directory where the plot image will be saved.
     """
-    epochs = len(weight_matrices)
-    # Flatten each weight matrix into a 1D array.
-    evolution = np.array([W.flatten() for W in weight_matrices])
-    n_weights = evolution.shape[1]
-    epoch_range = np.arange(epochs)
+    # Ensure the output directory exists
+    os.makedirs(output_dir, exist_ok=True)
     
-    # Create a figure with two subplots:
-    # Left: individual weight evolutions.
-    # Right: mean weight evolution.
-    fig, axs = plt.subplots(1, 2, figsize=(14, 6))
+    # Convert the list of matrices into a 3D NumPy array (iterations, rows, cols)
+    weight_matrices_array = np.array(weight_matrices)
+    num_iterations, num_rows, num_cols = weight_matrices_array.shape
+
+    # Flatten each weight matrix to track individual weights over iterations
+    flattened_weights = weight_matrices_array.reshape(num_iterations, -1)
+
+    # Downsample iterations based on the interval
+    interval = 1
+    x = np.arange(0, num_iterations, interval)
+    sampled_weights = flattened_weights[x]
+
+    # Create a line plot for each weight
+    plt.figure(figsize=(12, 8))
+    for i in range(sampled_weights.shape[1]):  # Number of weights
+        plt.plot(x, sampled_weights[:, i], label=f'Weight {i+1}', alpha=0.7)
+
+    plt.yscale('log')
+    plt.title(title)
+    plt.xlabel("Iteration")
+    plt.ylabel("Weight Value")
+    plt.grid(True)
+    plt.tight_layout()
     
-    # Plot each weight's evolution as a line (with slight transparency)
-    for i in range(n_weights):
-        axs[0].plot(epoch_range, evolution[:, i], alpha=0.5)
-    axs[0].set_title("Individual Weight Evolution")
-    axs[0].set_xlabel("Epoch")
-    axs[0].set_ylabel("Weight Value")
-    axs[0].grid(True)
+    # Construct a filename based on the title (replace spaces with underscores)
+    safe_title = title.replace(" ", "_")
+    file_name = os.path.join(output_dir, f"weight_evolution_{safe_title}.png")
     
-    # Compute and plot the mean weight at each epoch.
-    mean_weights = np.mean(evolution, axis=1)
-    axs[1].plot(epoch_range, mean_weights, marker='o', color='red')
-    axs[1].set_title("Mean Weight Evolution")
-    axs[1].set_xlabel("Epoch")
-    axs[1].set_ylabel("Mean Weight")
-    axs[1].grid(True)
-    
-    plt.suptitle(title)
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    plt.show()
+    # Save the plot and close the figure
+    plt.savefig(file_name)
+    plt.close()
 
 def plot_loss(loss_lists, epoch):
     """
@@ -463,22 +520,35 @@ def plot_loss(loss_lists, epoch):
     plt.grid(True)
     plt.show()
     
-def plot_cosine_similarity(cosine_list, title="Cosine similarity"):
+def plot_cosine_similarity(cosine_list, output_dir, title):
+    """
+    Plots cosine similarity over iterations and saves the plot in the specified output directory.
 
-    # Extract ratios from the list of dicts
-    #weight_ratios = [d['weight_reduction_ratio'] for d in ratio_dicts]
+    Args:
+        cosine_list (list or array): List of cosine similarity values.
+        title (str): Title of the plot.
+        output_dir (str): Directory where the plot image will be saved.
+    """
+    # Ensure the output directory exists
+    title
+    os.makedirs(output_dir, exist_ok=True)
     
     iterations = range(1, len(cosine_list) + 1)
     
     plt.figure(figsize=(10, 6))
     plt.plot(iterations, cosine_list, label="Cosine similarity", color="blue", marker='o')
-    #plt.plot(iterations, weight_ratios, label="Weight Reduction Ratio", color="red", marker='s')
     plt.xlabel("Iteration")
     plt.ylabel("Cosine")
     plt.title(title)
     plt.legend()
     plt.grid(True)
-    plt.show()   
+    
+    # Create a file name from the title by replacing spaces with underscores
+    file_name = os.path.join(output_dir, title.replace(" ", "_") + ".png")
+    
+    # Save the figure instead of showing it
+    plt.savefig(file_name)
+    plt.close()
     
 def plot_reduction_ratios_from_dicts(ratio_dicts, title="Reduction Ratios Over Iterations"):
     """

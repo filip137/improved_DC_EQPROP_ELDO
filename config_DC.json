@@ -1,0 +1,90 @@
+{
+    "simulation_details": {
+        "initializer": {
+            "init_type": "random_uniform",
+            "params": {
+                "L": 0.000008,
+                "U": 1e-06,
+                "g_max": 0.1e-4,
+                "g_min": 5e-07
+            }
+        },
+        "layers": {
+            "fully_connected": [
+                9,
+                14,
+                6
+            ],
+            "lower_cond_bound": 1e-07,
+            "upper_cond_bound": 1e-4
+        },
+        "learning_rate_factors": {
+            "lr_layer1": 1.0,
+            "lr_layer2": 1.0
+        },
+        "gradient_clip": 1,
+        "gamma_values": {
+            "layer1": 8e-7,
+            "layer2": 5e-7
+        },
+        "beta": 0.5,
+        "loss": {
+            "type": "MSE"
+        },
+        "boundary": 0.5
+    },
+    "dataset_details": {
+        "n_of_epochs": 50,
+        "scale_factor": 4,
+        "noise": 0,
+        "bias": 0,
+        "num_samples": 2400,
+        "batch_size": 45
+    },
+    "network_details": {
+        "nonlin_parameters_ss": {
+            "WIDTH_NMOS_DIFF_A": "650n",
+            "VDD": 3.3,
+            "V_CASCODE": 2.9,
+            "RS_CD": "10k",
+            "RS": "10k",
+            "RES_DIFF_AMP": "32k",
+            "RD": "100k",
+            "R_VCVS_BIAS2": "10MEG",
+            "R_VCVS_BIAS1": "10MEG",
+            "R_SHUNT": "5k",
+            "R_D_DIFF_AMP": "65k",
+            "R_CCCS_BIAS2": "15MEG",
+            "R_CCCS_BIAS1": "10MEG",
+            "LOW_NOISE_OPTION": 0,
+            "LENGTH_NMOS_DIFF_A": "650n",
+            "LENGH_CASC_2": "3.6u",
+            "LENGH_CASC_1": "1.6u",
+            "IBIAS_DIFF_A": "90u",
+            "IBIAS_CASCODE": "30u",
+            "CS2_L": "2u",
+            "CS1_W": "1.2u",
+            "CD1_W": "4u",
+            "CD1_L": "650n",
+            "CAP": "1n"
+        },
+        "nonlin_parameters_perfect": {
+            "VDIODE1": 0.5,
+            "VDIODE2": -0.5,
+            "AMP": 4,
+            "CAMP": 1
+        },
+        "AC_biases": {
+            "source_dc_bias": 2.3
+        },
+        "frequency": "1Meg",
+        "simulation_type": "DC",
+        "neuron": "perfect_amp",
+        "network_files": {
+            "sample_file": "/home/filip/simulations/aex_files",
+            "output_dir": "/home/filip/simulations/aex_files"
+        }
+    }
+}
+
+ 

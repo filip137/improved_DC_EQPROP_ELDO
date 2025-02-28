@@ -114,7 +114,7 @@ class MyNetwork:
             #f".AC LIST {freq}\n"
             simulation_details = (
                 
-                f".SST FUND1={freq} NHARM1=1\n"
+                f".SST FUND1={freq} NHARM1=3\n"
                 f"{vm_string}\n" ##here also append vi string if it's needed
                 ".OPTION AEX\n"
                 ".OPTION NOASCII\n"
@@ -310,7 +310,7 @@ class MyNetwork:
                 #pred_free = loss_fn(outputs, target, beta_r, mode)
                 
                 #now I can simply zip the currents to the parameters of the last layer and repeat
-                target_voltages = - target_voltages.flatten() #FOR SOME REASON THE INPUTS ARE INVERTED
+                target_voltages = target_voltages.flatten()
 
                 
                 if mode == "train-current":
@@ -335,12 +335,15 @@ class MyNetwork:
 
                 mode = 'test' 
 
+                start_index += n_of_node_voltages + 3
+                end_index = start_index + n_of_node_voltages
                 
                 parse_aex_file_from_end_timed(aex_result_file, n_of_node_voltages, simulation_type, voltage_dict_nudge, offset)
                  
 
 
 
+                start_index += n_of_node_voltages + 3
 
                 python_update_time = time.time
                 for layer in resistive_layers:
@@ -367,15 +370,15 @@ class MyNetwork:
                 
               
             #At the end of the batch update all resistances
-            for j, layer in enumerate(resistive_layers):
+            for i, layer in enumerate(resistive_layers):
                 layer.update_W(mode = "clip_updates", clip = self.gradient_clip)
                 layer.update_res_dict()
                 set_resistances(eldo_process, layer.resistor_dict, debug = False)
                 #time.sleep(0.01)
                 ratios = compute_cosine_similarity(layer.deltaG, layer.W_old, layer.W)
-                if j == 0:
+                if i == 0:
                     ratios_list1.append(ratios)
-                elif j == 1:
+                elif i == 1:
                     ratios_list2.append(ratios)
                 #print(f"Norm of the deltaG {np.linalg.norm(layer.deltaG, ord=2)}")
                 #print(f"finished batch {i}")
@@ -796,7 +799,7 @@ def main(): #probably objective function
 
 
     # Load the configuration file
-    with open("config_amp_imp.json", "r") as file:
+    with open("config_DC.json", "r") as file:
         config = json.load(file)
     
     # #  
@@ -809,6 +812,7 @@ def main(): #probably objective function
     ########################
     network_config = network_details["network_files"]
     input_files = create_filenames(network_config)
+    full_subfolder_path, new_sample_file, aex_file_path = input_files
     
     #Extract dataset
     dataset_config = dataset_details
@@ -830,11 +834,9 @@ def main(): #probably objective function
     
     # Initialize the network layers
     
-    scale_factor_list = [0.7, 0.8, 0.9]
+    scale_factor_list = [4]
     #batch_size = 32
     for scale_factor in scale_factor_list:
-        full_subfolder_path, new_sample_file, aex_file_path = input_files
-
         #layers = initialize_network_layers(simulation_details, network_details)
 
         
@@ -843,7 +845,7 @@ def main(): #probably objective function
         #Build the netlist
         net.build_netlist()
          
-        simulation = "moons_simulation"
+        simulation = "iris_simulation"
         # Load and center the dataset
         if simulation == "moons_simulation":
             X_t, Y_t = prepare_moons_data(num_samples, noise=0.1, random_state=41)
