@@ -43,7 +43,7 @@ class MSE:
             output_nodes_voltages = output_node_voltages_values
             prediction = output_node_voltages_values
         
-        if mode == 'train-current':
+        if mode == 'current':
             losses = np.zeros(shape=(int(num_output_nodes/2), ))
 
             currents = np.zeros(shape=(int(num_output_nodes/2), 2))
@@ -52,7 +52,7 @@ class MSE:
             #currents = np.zeros(shape=(int(num_output_nodes/2), 1))
             
             # MSE calculatuon
-            diff = prediction - target
+            diff = target - prediction
             losses = 0.5 * np.power(diff, 2)
 
             # loss current calculation
@@ -63,7 +63,7 @@ class MSE:
             
             return losses, currents
         
-        if mode == 'train-voltage':
+        if mode == 'voltage':
             losses = np.zeros(shape=(int(num_output_nodes/2), ))
 
             voltages = np.zeros(shape=(int(num_output_nodes/2), 2))

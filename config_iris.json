@@ -1,18 +1,18 @@
 {
   "simulation_details": {
     "initializer": {
-      "init_type": "random_uniform",
+      "init_type": "glorot",
       "params": {
-        "L": 1e-2,
-        "U": 1e-3,
+        "L": 0.00008,
+        "U": 1e-7,
         "g_max": 1,
         "g_min": 5e-7
       }
     },
     "layers": {
-      "fully_connected": [5, 9, 6],
+      "fully_connected": [5, 12, 4],
       "lower_cond_bound": 1e-7,
-      "upper_cond_bound": 10
+      "upper_cond_bound": 1e-4
     },
     "learning_rate_factors": {
       "lr_layer1": 1.0,
@@ -20,8 +20,8 @@
     },
     "gradient_clip": 1,
     "gamma_values": {
-      "layer1": 0.00001,
-      "layer2": 0.00001
+      "layer1": 5e-7,
+      "layer2": 1e-7
     },
     "beta": 0.0001,
     "loss": {

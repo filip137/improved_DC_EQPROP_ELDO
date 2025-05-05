@@ -1,0 +1,88 @@
+{
+  "simulation_details": {
+    "initializer": {
+      "init_type": "random_uniform",
+      "params": {
+        "L": 8e-6,
+        "U": 1e-7,
+        "g_max": 1e-5,
+        "g_min": 5e-7
+      }
+    },
+    "layers": {
+      "fully_connected": [5, 12, 4],
+      "lower_cond_bound": 1e-7,
+      "upper_cond_bound": 1e-4
+    },
+    "learning_rate_factors": {
+      "lr_layer1": 1.0,
+      "lr_layer2": 1.0
+    },
+    "gradient_clip": 1,
+    "gamma_values": {
+        "layer1": 5e-6,
+        "layer2": 5e-7
+    },
+    "beta": 0.5,
+    "loss": {
+      "type": "MSE"
+    },
+    "boundary": 0.5
+  },
+  "dataset_details": {
+    "n_of_epochs": 30,
+    "scale_factor": 4,
+    "noise": 0,
+    "bias": 0,
+    "num_samples": 2400,
+    "batch_size": 15
+  },
+  "network_details": {
+    "nonlin_parameters_ss": {
+      "WIDTH_NMOS_DIFF_A": "650n",
+      "VDD": 3.3,
+      "V_CASCODE": 2.9,
+      "RS_CD": "10k",
+      "RS": "10k",
+      "RES_DIFF_AMP": "32k",
+      "RD": "100k",
+      "R_VCVS_BIAS2": "10MEG",
+      "R_VCVS_BIAS1": "10MEG",
+      "R_SHUNT": "5k",
+      "R_D_DIFF_AMP": "65k",
+      "R_CCCS_BIAS2": "15MEG",
+      "R_CCCS_BIAS1": "10MEG",
+      "LOW_NOISE_OPTION": 0,
+      "LENGTH_NMOS_DIFF_A": "650n",
+      "LENGH_CASC_2": "3.6u",
+      "LENGH_CASC_1": "1.6u",
+      "IBIAS_DIFF_A": "90u",
+      "IBIAS_CASCODE": "30u",
+      "CS2_L": "2u",
+      "CS1_W": "1.2u",
+      "CD1_W": "4u",
+      "CD1_L": "650n",
+      "CAP": "1n"
+    },
+    "nonlin_parameters_perfect": {
+      "VDIODE1": 0.50,
+      "VDIODE2": -0.50,
+      "AMP": 4,
+      "CAMP": 1
+    },
+    "AC_biases": {
+      "source_dc_bias": 2.3
+    },
+    "frequency": "1Meg",
+    "simulation_type" : "FSST",
+    "neuron": "amp_ss",
+    "network_files": {
+      "sample_file": "/home/filip/simulations/aex_files",
+      "output_dir": "/home/filip/simulations/aex_files",
+      "seed" : 40
+    }
+  }
+}
+
+
+ 

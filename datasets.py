@@ -149,6 +149,20 @@ def generate_2_bias_pos_neg_inputs(X, Y, scale_factor, bias, output_scale = 1):
 
 
 
+def pos_inputs_1bias(X, bias):
+    # Scale positive and negative inputs
+    X_pos = X
+    X_bias_pos = bias * np.ones((X_pos.shape[0], 1))
+    
+    # Combine inputs
+    X_in = np.hstack((X_pos, X_bias_pos))
+    
+    # Scale output
+
+    # Only one-hot encode if Y is not already one-hot encoded.
+
+    return X_in
+
 
 def onehot_pos_neg_inputs_1bias(X, Y, scale_factor, bias, output_scale=1):
     # Scale positive and negative inputs

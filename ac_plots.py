@@ -269,7 +269,7 @@ def plot_weight_histogram(weight_matrix, bins=50, title='Weight Matrix Histogram
 
 
 
-def plot_free_and_nudged(output_list, output_list_nudge, output_nodes, beta, gamma, epoch):
+def plot_free_and_nudged(output_list, output_list_nudge, output_nodes, beta, epoch):
     """
     Plots free and nudged results for each output node over iterations.
 
@@ -312,7 +312,7 @@ def plot_free_and_nudged(output_list, output_list_nudge, output_nodes, beta, gam
         plt.plot(x, free_results - nudged_results, label=f'Difference (Node {node})', linestyle='--')
         
         # Adding titles and labels
-        plt.title(f"Results over Iterations for Node {node} (beta={beta}, gamma={gamma}, epoch {epoch})")
+        plt.title(f"Results over Iterations for Node {node} epoch beta{beta} {epoch})")
         plt.xlabel('Iteration')
         plt.ylabel('Measured Value')
 

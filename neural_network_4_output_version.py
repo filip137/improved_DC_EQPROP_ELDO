@@ -17,179 +17,85 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 import json
 from ac_plots import *
-from netlist_data import NETLIST_DEFINITIONS, PARAMS
+from simulation_parameters import SimulationParameters
+from layers_initialization import initialize_network_layers
+from netlist_generation.netlist_generation import netlist_builder
+from transconductance_calculations import calculate_transconductance
+import multiprocessing
+from mpl_toolkits.mplot3d import Axes3D  # Necessary for 3D plotting (in some versions)
+from matplotlib import cm  # For colormap support
+import warnings
+warnings.filterwarnings(
+    "ignore",
+    message="Failed to set pipe buffer size"
+)
 #Initialize a complete neural network and build a netlist
 
 
 class MyNetwork:
-    def __init__(self, config, files, scale_factor):
+    def __init__(self, layers, sim_params, input_files, all_nodes):
         # Unpack configuration details
         
-        simulation_details = config.get("simulation_details", {})
-        self.boundary = simulation_details.get("boundary", 0.05)
-        self.loss_fn = MSE(self.boundary)
-        self.gradient_clip = simulation_details.get("gradient_clip", {5e-7})
-        self.beta = simulation_details["beta"]
+        self.layers = layers
+        simulation_details = sim_params
+        self.loss_fn = MSE(0.5)
+        self.beta = sim_params.beta
 
-        
+        self.nudging_mode = sim_params.nudging_mode        
         
         
         # Unpack network details.
-        network_details = config.get("network_details", {})
-        self.nonlin_parameters_ss = network_details.get("nonlin_parameters_ss", {})
-        self.nonlin_parameters_perfect = network_details.get("nonlin_parameters_perfect", {})
-        self.ac_biases = network_details.get("AC_biases", {})
-        self.frequency = network_details.get("frequency", None)
-        self.neuron = network_details.get("neuron", {})
-        self.freq = network_details.get("frequency", {})
-        self.simulation_type = network_details.get("simulation_type", {"DC"})
-        network_config = network_details.get("network_files", {})
-        full_subfolder_path, self.new_sample_file, self.aex_file_path = files
+        self.freq = sim_params.freq
+        self.simulation_type = sim_params.simulation_type
+        full_subfolder_path, self.new_sample_file, self.aex_file_path = input_files
 
 
 
-        dataset_details = config.get("dataset_details", {})
-        self.bias = dataset_details["bias"]
-        self.batch_size = dataset_details["batch_size"]
-        self.scale_factor = scale_factor
+        #dataset_details = config.get("dataset_details", {})
+        #self.bias = dataset_details["bias"]
+        
+        self.batch_size = sim_params.batch_size
+        self.scale_factor = sim_params.scale_factor
+        self.bias = sim_params.bias
+        
+        self.all_nodes = all_nodes
+        
+
+
+    def set_inputs_and_run_simulation():
         
         
-        self.layers = self.initialize_network_layers(simulation_details, network_details)
-        self.all_nodes = extract_all_nodes_voltages(self.layers)
-        
-    #just builds the netlist
-    def build_netlist(self):
-        
-        freq = self.freq
-        neuron = self.neuron
-        file_name = self.new_sample_file
-        all_nodes = self.all_nodes
-        parameter_lines = self.extract_parameters()
-        #parameter_lines.append(PARAMS["amp_ss1"])
-            
-            
-        #parameter_lines.extend(amp_parameter_lines)
-        network_description = self.extract_connections()
-        
-        # Get current date and time
-        current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        # Generate header with current date and time
-        header = f"***\n" \
-                 f"*** Generated for: eldoD\n" \
-                 f"*** Generated on: {current_datetime}\n" \
-                 f"*** Design library name: tests\n" \
-                 f"*** Design cell name: 4moons\n" \
-                 f"*** Design view name: schematic\n" \
-                 f".GLOBAL\n"
-                 
-                 
-        
-        #not really sure how/if I can avoid doing this
-        if neuron == "amp_ss":
-            mid_sect = NETLIST_DEFINITIONS["amp_ss"]
-        
-        elif neuron == "perfect_amp":
-            mid_sect = NETLIST_DEFINITIONS["perfect_amp"]
-        
-        counter = 0 
-        
-        if self.simulation_type == "FSST":
-            vm_list = []
-            for node in all_nodes:
-                if counter == 0:
-                    vm_list.append(".EXTRACT FSST")
-                vm_node = f"YVAL(V({node}), {freq})"
-                vm_list.append(vm_node)
-                counter += 1
-                if counter == 5:
-                    # Append the current line and reset for a new one
-                    vm_list.append("\n")
-                    counter = 0
-           # Join the vm_list into a string, removing unnecessary spaces and ensuring formatting
-            vm_string = " ".join(filter(None, vm_list)).replace(" \n.", "\n.")
-            # vi_string = " ".join(filter(None, vi_list)).replace(" \n.", "\n.")
-            
-            
-            #f".AC LIST {freq}\n"
-            simulation_details = (
+        set_input_voltages(eldo_process, input_dict, debug = False)
+                #move at the end
+        disable_current_sources(eldo_process, inudge_dict, debug = False)
+                #time.sleep(0.01)
+        start_simulation = time.time()
+        run_eldo_simulation(eldo_process, debug)
                 
-                f".SST FUND1={freq} NHARM1=1\n"
-                f"{vm_string}\n" ##here also append vi string if it's needed
-                ".OPTION AEX\n"
-                ".OPTION NOASCII\n"
-                ".END\n"
-            )
-
-
-        if self.simulation_type == "DC":
-            vdc_list = []
-            for node in all_nodes:
-                if counter == 0:
-                    vdc_list.append(".EXTRACT DC")
-                vdc_node = f"V({node})"
-                vdc_list.append(vdc_node)
-                counter += 1
-                if counter == 5:
-                    # Append the current line and reset for a new one
-                    vdc_list.append("\n")
-                    counter = 0
-           # Join the vm_list into a string, removing unnecessary spaces and ensuring formatting
-            vdc_string = " ".join(filter(None, vdc_list)).replace(" \n.", "\n.")
-            # vi_string = " ".join(filter(None, vi_list)).replace(" \n.", "\n.")
-            
-            
-            simulation_details = (
                 
-                f".DC\n"
-                f"{vdc_string}\n" ##here also append vi string if it's needed
-                ".OPTION AEX\n"
-                ".OPTION NOASCII\n"
-                ".END\n"
-            )
-                             
-        with open(file_name, 'w') as file:
-            file.write(header)
-            for line in parameter_lines:
-                file.write(line + '\n')  # Ensure line is a string and add a newline
-            file.write(mid_sect)
-            for section in network_description:
-                for line in section:
-                    file.write(line)  # Write each line from the sections
-            file.write(simulation_details)
-        print(f"Network description and parameters have been saved to {file_name}.")
-        
-    
-    def extract_parameters(self):
-        # ampv = self.ampv
-        # ampc = self.ampc
-        form = ["FORM=0"]
-        all_parameters = []
-        
-        # Add parameters from each layer with `.PARAM` prefix
-        for layer in self.layers:
-            if layer.parameters:
-                for key, value in layer.parameters.items():
-                    line = f".PARAM {key}={value}"
-                    all_parameters.append(line)
-            else:
-                pass
-        # Add other parameters with `.PARAM` prefix
-        # all_parameters.extend([f".PARAM {item}" for item in ampv])
-        # all_parameters.extend([f".PARAM {item}" for item in ampc])
-        all_parameters.extend([f".PARAM {item}\n" for item in form])
-        
-        return all_parameters
-    
-    def extract_connections(self):
-        extracted_connections = []
-        for layer in self.layers:
-            lines = layer.connections  # Assuming 'connections' is already a list
-            extracted_connections.extend(lines)  # Use 'extend' instead of 'append' to add all elements of 'lines'
-        return extracted_connections
+        end_index = start_index + n_of_node_voltages
+                
+                
+                
+                #lines_of_interest = wait_for_eldos_completion(eldo_process, debug)
+        wait_for_eldos_completion_old(eldo_process, debug)
+        end_simulation = time.time() - start_simulation
+        simulation_time_list.append(end_simulation)
+        start_vol_extract = time.time()
+                #voltage_dict_free = parse_aex_file_no_end(aex_result_file, start_index, simulation_type, voltage_dict_free)
+        parse_aex_file_from_end_timed(aex_result_file, n_of_node_voltages, simulation_type, voltage_dict_free, offset)
+#                timings_list.append(timings)
+        vol_extract_time = time.time() - start_vol_extract
+        vol_extract_list.append(vol_extract_time)
 
-    
-  
+                
+        for layer in resistive_layers:
+            layer.update__free_voltages(voltage_dict_free)
+                     
+                #print(f"Voltage extraction {volt_extract_end}")
+        outputs = layer.output_free_voltages #the outputs are just the outputs of the last layer
+        output_values = np.array(list(outputs.values()))
+        output_list.append(output_values)
 
     def free_nudged_train(self, eldo_process, X_train, Y_train, targets, epoch, optimizer = None, debug = False):
         
@@ -204,6 +110,7 @@ class MyNetwork:
         
         n_of_node_voltages = len(self.all_nodes)
         
+        q = self.q
         
         
         input_layer = layers[0]
@@ -214,7 +121,7 @@ class MyNetwork:
         inudge_dict = output_layer.parameters
         inudge_keys_list = list(inudge_dict.keys())
         
-        resistive_layers = [layer for layer in layers if getattr(layer, 'type', None) == 'resistive']
+        resistive_layers = [layer for layer in layers if getattr(layer, 'trainable', None)]
         
         num_batches = int(np.ceil(len(X_train) / batch_size))
          
@@ -233,20 +140,20 @@ class MyNetwork:
         start_index = 4
         vol_extract_list = []
         simulation_time_list = []
-        voltage_dict_free = dict.fromkeys(self.all_nodes, None)
+        voltage_dict_free = dict.fromkeys(self.all_nodes, None) #
         voltage_dict_nudge = dict.fromkeys(self.all_nodes, None)
         
         timings_list = []
-        offset= 0
-        if epoch > 1:
-            file_size = os.path.getsize(aex_result_file)
-            offset = file_size
+        offset = 0
+
+
             #print(f"File size before clearing: {file_size} bytes")
         
         
         for i in range(num_batches):
-            #if i > 0:
-                #start_index += 3
+            if os.path.exists(aex_result_file):
+                file_size = os.path.getsize(aex_result_file)
+                offset = file_size
             batch_start_time = time.time()
             start_idx = i * batch_size
             end_idx = min((i + 1) * batch_size, len(X_train))  # Ensure not to exceed the dataset length
@@ -265,26 +172,25 @@ class MyNetwork:
                 for j, key in enumerate(input_keys_list):
                     input_dict[key] = X[j]  # Directly assign the value from X to the corresponding key
                     
-                beta_r = beta
-                set_input_voltages(eldo_process, input_dict, debug = False)
+                beta_r = beta * np.random.uniform(-5,5)
+                #beta_r = beta
+                set_input_voltages(eldo_process, input_dict, debug)
                 #move at the end
-                disable_current_sources(eldo_process, inudge_dict, debug = False)
+                disable_current_sources(eldo_process, inudge_dict, debug)
                 #time.sleep(0.01)
                 start_simulation = time.time()
                 run_eldo_simulation(eldo_process, debug)
                 
                 
                 end_index = start_index + n_of_node_voltages
-                
-                
-                
+
                 #lines_of_interest = wait_for_eldos_completion(eldo_process, debug)
-                wait_for_eldos_completion_old(eldo_process, debug)
+                wait_for_eldos_completion_drain(eldo_process, q, debug)
                 end_simulation = time.time() - start_simulation
                 simulation_time_list.append(end_simulation)
                 start_vol_extract = time.time()
                 #voltage_dict_free = parse_aex_file_no_end(aex_result_file, start_index, simulation_type, voltage_dict_free)
-                parse_aex_file_from_end_timed(aex_result_file, n_of_node_voltages, simulation_type, voltage_dict_free, offset)
+                parse_aex_file_from_end_offset(aex_result_file, n_of_node_voltages, simulation_type, voltage_dict_free, offset)
 #                timings_list.append(timings)
                 vol_extract_time = time.time() - start_vol_extract
                 vol_extract_list.append(vol_extract_time)
@@ -298,26 +204,29 @@ class MyNetwork:
                 output_values = np.array(list(outputs.values()))
                 output_list.append(output_values)
                 
-                mode = "train-voltage"
+                mode = self.nudging_mode
                 #target = Y * self.boundary
                 if targets != None:
                     Y_index = np.argmax(Y)
                     target = targets[Y_index]
                 else:
                     target = (Y/4) * self.scale_factor
-                sample_losses, target_voltages = loss_fn(outputs, target, beta_r, mode = "train-voltage")#need to decide where to initialize this function - remember that loss_fn comes from the already initialized MSE
                 #predicted value
                 #pred_free = loss_fn(outputs, target, beta_r, mode)
                 
                 #now I can simply zip the currents to the parameters of the last layer and repeat
-                target_voltages = - target_voltages.flatten() #FOR SOME REASON THE INPUTS ARE INVERTED
+                
 
                 
-                if mode == "train-current":
+                if mode == "current":
+                    sample_losses, currents = loss_fn(outputs, target, beta_r, mode)
                     for k, key in enumerate(inudge_keys_list):
-                        inudge_dict[key] = flat_currents[k]    
+                        inj_currents =  currents.flatten() 
+                        inudge_dict[key] = inj_currents[k]    
                         
-                if mode == "train-voltage":
+                if mode == "voltage":
+                    sample_losses, target_voltages = loss_fn(outputs, target, beta_r, mode)#need to decide where to initialize this function - remember that loss_fn comes from the already initialized MSE
+                    target_voltages = - target_voltages.flatten() #FOR SOME REASON THE INPUTS ARE INVERTED
                     voltage_index = 0
                     for key in inudge_keys_list:
                         if key.startswith("VNUDGE"):
@@ -328,16 +237,17 @@ class MyNetwork:
                                         
                 #output_layer.parameters = output_layer.update_parameters(flat_currents)
                 
-                set_currents_nudge_mode(eldo_process, inudge_dict, debug = False)
+                set_currents_nudge_mode(eldo_process, inudge_dict, debug)
                 run_eldo_simulation(eldo_process, debug)
                 #lines_of_interest = wait_for_eldos_completion(eldo_process, debug)
-                wait_for_eldos_completion_old(eldo_process, debug)
+                #wait_for_eldos_completion_old(eldo_process, debug)
+                wait_for_eldos_completion_drain(eldo_process, q, debug)
 
                 mode = 'test' 
 
                 
-                parse_aex_file_from_end_timed(aex_result_file, n_of_node_voltages, simulation_type, voltage_dict_nudge, offset)
-                 
+                parse_aex_file_from_end_offset(aex_result_file, n_of_node_voltages, simulation_type, voltage_dict_nudge, offset)
+
 
 
 
@@ -350,11 +260,11 @@ class MyNetwork:
                 outputs_n = layer.output_nudge_voltages
                 outputs_n_values = list(outputs_n.values())#the outputs are just the outputs of the last layer
                 output_list_nudge.append(outputs_n_values)   
-                sample_losses_n, voltages_n = loss_fn(outputs_n, target, beta_r, mode = "train-voltage")
+#                sample_losses_n, voltages_n = loss_fn(outputs_n, target, beta_r, mode)
                 
                 
                 for layer in resistive_layers:
-                    layer.run_update_process(batch_size, beta_custom = beta_r)
+                    layer.run_update_process(batch_size, beta_r)
                     
                     
 
@@ -368,15 +278,14 @@ class MyNetwork:
               
             #At the end of the batch update all resistances
             for j, layer in enumerate(resistive_layers):
-                layer.update_W(mode = "clip_updates", clip = self.gradient_clip)
-                layer.update_res_dict()
-                set_resistances(eldo_process, layer.resistor_dict, debug = False)
-                #time.sleep(0.01)
-                ratios = compute_cosine_similarity(layer.deltaG, layer.W_old, layer.W)
-                if j == 0:
-                    ratios_list1.append(ratios)
-                elif j == 1:
-                    ratios_list2.append(ratios)
+                layer.update_W(mode = None, clip = None)
+                layer.update_synapse_dict()
+                set_resistances(eldo_process, layer.synapse_dict, debug)
+                # ratios = compute_cosine_similarity(layer.deltaG, layer.W_old, layer.W)
+                # if j == 0:
+                #     ratios_list1.append(ratios)
+                # elif j == 1:
+                #     ratios_list2.append(ratios)
                 #print(f"Norm of the deltaG {np.linalg.norm(layer.deltaG, ord=2)}")
                 #print(f"finished batch {i}")
                 
@@ -386,23 +295,6 @@ class MyNetwork:
             
 
             
-            #truncate__aex_file(aex_result_file, 10)
-            #clear_aex_file(aex_result_file)
-
-            #print(f"Batch duration {batch_duration}")
-        
-        
-        
-    #    num_iterations = len(timings_list)
-#        num_parts = len(timings_list[0])
-        # average_timings = [0.0] * num_parts
-        # for timings in timings_list:
-        #     for i, t in enumerate(timings):
-        #         average_timings[i] += t
-        # average_timings = [t / num_iterations for t in average_timings]
-
-        # print("Average timings (in seconds):", average_timings)
-        
         
         #plot_cosine_similarity(ratios_list1)
         ratio1_mean = np.array(np.mean(ratios_list1))
@@ -425,18 +317,12 @@ class MyNetwork:
         mean_time_simulation = np.mean(np.array(simulation_time_list))
         #print(f"Average simulation time {mean_time_simulation}")
         output_nodes = [0, 1, 2, 3]
-        #gamma = None
-        #plot_free_and_nudged(output_list, output_list_nudge, output_nodes, beta, gamma = None, epoch = None)
-        #plot_weight_matrix_evolution_lines(weight_matrices_1, interval=10, title = "First weight matrix")    
-        #plot_weight_matrix_evolution_lines(weight_matrices_2, interval = 10,title = "Second weight matrix")  
-        #plot_weight_matrix_evolution_separate(weight_matrices_1, interval=10, title = "First weight matrix")    
-        #plot_weight_matrix_evolution_separate(weight_matrices_2, interval=10, title = "Second weight matrix")    
+        plot_free_and_nudged(output_list, output_list_nudge, output_nodes, beta, epoch)
 
         #clear_aex_file(aex_result_file)
             #print("Successfully deleted aex file")
         
-        #output_plot(output_list)
-        #plot_loss(loss_list, epoch)
+
         diff1, diff2 =  output_plot(output_list)
         disable_current_sources(eldo_process, inudge_dict, debug)
         mean_loss = np.mean(np.array(loss_list), axis = 1)
@@ -463,7 +349,7 @@ class MyNetwork:
         #     sys.exit(0)  # Exit the program
         
         if draw_grid:
-            X_in, Y = onehot_pos_neg_inputs_1bias_double_input(X_grid, Y_in, bias = 1, output_scale=1)
+            X_in, Y = onehot_pos_neg_inputs_1bias_double_input(X_grid, Y_in, self.bias, output_scale=1)
             
         input_layer = self.layers[0]
         output_layer = self.layers[-1]
@@ -476,25 +362,30 @@ class MyNetwork:
         voltage_dict_free = dict.fromkeys(self.all_nodes, None)
 
 
-        
-        resistive_layers = [layer for layer in self.layers if getattr(layer, 'type', None) == 'resistive']
+        layers = self.layers
+        resistive_layers = [layer for layer in layers if getattr(layer, 'trainable', None)]
         output_layer = resistive_layers[-1]
         binary_list = []
         prediction_list = []
         
         #clear_aex_file(aex_result_file)
 
-        if epoch == 0:
-            start_index = 4
-        else:
-            start_index = 3 
-        start_index = 3
+
         aex_result_file = self.aex_file_path
         #clear_aex_file(aex_result_file)
         #truncate__aex_file(aex_result_file, 10)
         counter = 0
-        file_size = os.path.getsize(aex_result_file)
-        offset = file_size
+        
+        
+        input_amp_voltages = []
+
+        output_amp_voltages = [] 
+ 
+        
+        
+        if os.path.exists(aex_result_file):
+            file_size = os.path.getsize(aex_result_file)
+            offset = file_size
         print(f"File size before draw grid: {file_size} bytes")
         for X in X_in:
             for i, key in enumerate(input_keys_list):
@@ -506,7 +397,15 @@ class MyNetwork:
             lines_of_interest = wait_for_eldos_completion(eldo_process, debug)
 
             #end_index = start_index + n_of_node_voltages
-            parse_aex_file_from_end_timed(aex_result_file, n_of_node_voltages, simulation_type, voltage_dict_free, offset)
+            parse_aex_file_from_end_offset(aex_result_file, n_of_node_voltages, simulation_type, voltage_dict_free, offset)
+
+
+            for layer in resistive_layers:
+                layer.update__free_voltages(voltage_dict_free)
+                
+                    
+            input_amp_voltages.append(list(resistive_layers[0].output_free_voltages.values()))
+            output_amp_voltages.append(list(resistive_layers[1].input_free_voltages.values()))
             output_layer.update__free_voltages(voltage_dict_free)
             
             outputs = output_layer.output_free_voltages #the outputs are just the outputs of the last layer
@@ -526,10 +425,12 @@ class MyNetwork:
             # counter += 1
             
         binary_array = np.array(binary_list).reshape(-1,1)
+        
+        
         #accuracy = np.mean(np.equal(binary_array, Y_in)) * 100
         #print(f"Accuracy: {accuracy:.2f}%")
         
-        return binary_array
+        return binary_array, input_amp_voltages, output_amp_voltages
     
     def calc_desired_outputs(self, eldo_process, X, Y, epoch, debug):
         input_layer = self.layers[0]
@@ -600,139 +501,195 @@ class MyNetwork:
         return targets
     
 
-    def draw_grid(self, eldo_process, X_val, Y_val, input_function, epoch, debug):
+    def draw_grid(self, eldo_process, X_val, Y_val, input_function, epoch, plot_directory, debug):
+        # Start a new figure for this iteration
+        plt.figure()
         
         # Define bounds of the domain
         min1, max1 = X_val[:, 0].min() - 0.1, X_val[:, 0].max() + 0.1
         min2, max2 = X_val[:, 1].min() - 0.1, X_val[:, 1].max() + 0.1
-        
-        num_points = 50
+        num_points = 10
     
         x1grid = np.linspace(min1, max1, num_points)
         x2grid = np.linspace(min2, max2, num_points)
     
-    # Create a meshgrid from the grid points
+        # Create a meshgrid from the grid points
         xx, yy = np.meshgrid(x1grid, x2grid)
         grid = np.c_[xx.ravel(), yy.ravel()]
+    
+        Y_indices = np.argmax(Y_val, axis=1)
+    
+        # Make predictions for the grid
+        X_bias = X_val[0, -1]
+        draw_grid_flag = True
+        y_predictions, input_amp_voltages, output_amp_voltages = self.free_test(eldo_process, grid, X_bias, Y_val, input_function, epoch, draw_grid_flag, debug=False)
+    
+    
+        
+    
+    
+        def draw_vol_amplification(xx, yy, input_amp_voltages, output_amp_voltages, epoch, plot_directory):
+            input_voltages_arr = np.transpose(np.array(input_amp_voltages))
+            output_voltages_arr = np.transpose(np.array(output_amp_voltages))
+            amp = output_voltages_arr / input_voltages_arr            
+            clipped_amp = np.clip(amp, 0, 10)
+            
+            #voltage amplifications
+            for i in range(clipped_amp.shape[0]):
+                amp_col = clipped_amp[i, :]
+                amp_2d = amp_col.reshape(xx.shape)
+            
+                plt.figure(figsize=(8, 6))
+    
+                # Set explicit limits using vmin and vmax
+                contour = plt.contourf(xx, yy, amp_2d, cmap='viridis')
+    
+                # Add a colorbar with defined limits
+                plt.colorbar(contour, label="Amplitude")
+    
+                plt.xlabel("VAC1", fontsize=14)
+                plt.ylabel("VAC2", fontsize=14)
+                plt.title(f"First Harmonic Voltage Amplification Amplifier {i+1}", fontsize=16)
+                plt.tick_params(axis='both', which='major', labelsize=14)
+                plt.grid(True)
+                plt.tight_layout()
+    
+    
+                vol_amp__directory = os.path.join(plot_directory, "voltage_amplification_graphs")    
+                # Ensure the directory exists
+                if not os.path.exists(vol_amp__directory):
+                    os.makedirs(vol_amp__directory)
+    
+                save_path = os.path.join(vol_amp__directory, f"Voltage_Amplification_{i+1}_epoch_{epoch}.png")
+                plt.savefig(save_path, bbox_inches='tight')
+    
+                plt.close()
         
         
-        Y_indices = np.argmax(Y_val, axis=1) 
-    # Make predictions for the grid
-        X_bias = X_val[0,-1]
-        draw_grid = True
-        y_predictions = self.free_test(eldo_process, grid, X_bias, Y_val, input_function, epoch, draw_grid, debug = False)
+            #PLOT THE INPUTS VS THE OUTPUTS OF THE AMPLIFIERS
+        
+            outputs_arr = np.transpose(np.array(output_amp_voltages)) #or output_values_list
+            n_plots = outputs_arr.shape[0]
+            #Loop over each amplifier (data slice).
+            for global_index in range(n_plots):
+                # Create a new figure with two subplots side by side.
+                fig = plt.figure(figsize=(15, 8))
+                
+                # ----------------------------
+                # Left subplot: 3D Surface Plot
+                # ----------------------------
+                ax3d = fig.add_subplot(1, 2, 1, projection='3d')
+                
+                # Extract and reshape the data for the current amplifier to match the grid.
+                input_voltages_col = outputs_arr[global_index, :]
+                input_voltages_2d = input_voltages_col.reshape(xx.shape)
+                
+                # Plot the 3D surface.
+                surf = ax3d.plot_surface(xx, yy, input_voltages_2d, cmap='viridis', vmin=0, vmax=10)
+                # Add a colorbar to indicate amplitude values.
+                #fig.colorbar(surf, ax=ax3d, label="Amplitude")
+                
+                # Set labels and title for the 3D plot.
+                ax3d.set_xlabel("VAC1", fontsize=14)
+                ax3d.set_ylabel("VAC2", fontsize=14)
+                ax3d.set_zlabel("Amplitude", fontsize=14)
+                ax3d.set_title(f"Amplifier {global_index+1}: 3D Input Voltages for synapse {synapse}", fontsize=16)
+                ax3d.grid(True)
+                
+                # -----------------------------------
+                # Right subplot: 2D Diagonal Plot
+                # -----------------------------------
+                ax2d = fig.add_subplot(1, 2, 2)
+                
+                # For a square grid, the diagonal is given by the elements where the row index equals the column index.
+                diag_x = np.diag(xx)               # x-coordinates along the diagonal (same as y in a square grid)
+                diag_voltage = np.diag(input_voltages_2d)
+                
+                # Plot the diagonal points.
+                ax2d.plot(diag_x, diag_voltage, 'o-', label="Amplitude along diagonal")
+                ax2d.set_xlabel("Diagonal Coordinate (x = y)", fontsize=14)
+                ax2d.set_ylabel("Amplitude", fontsize=14)
+                ax2d.set_title(f"Amplifier {global_index+1}: Diagonal Amplitude for synapse {synapse}", fontsize=16)
+                ax2d.grid(True)
+                ax2d.legend()
+                
+                
+                amp_outputs_graphs_directory = os.path.join(plot_directory, "amp_outputs_graphs")   
+                
+                if not os.path.exists(amp_outputs_graphs_directory):
+                    os.makedirs(amp_outputs_graphs_directory)
+                
+                
+                
+                save_path = os.path.join(amp_outputs_graphs_directory, f"Outputs of the amplifier_{global_index+1} at epoch_{epoch}.png")
+                plt.savefig(save_path, bbox_inches='tight')
     
-    # Convert predictions into an array and reshape back into a grid
-        y_predictions = np.array(y_predictions)
-        zz = y_predictions.reshape(xx.shape)
+                plt.close()
+        
+        
+        
+        
     
-    # Plot the grid of x, y, and z values as a surface
-        contour = plt.contourf(xx, yy, zz, cmap='Paired')
-        cbar = plt.colorbar(contour)
-        cbar.set_ticks([0, 1])
-        cbar.set_ticklabels(['Class 0', 'Class 1'])
-        Y_val = Y_indices.ravel()
-    # Separate the points by class
-        class0 = X_val[Y_indices == 0]
-        class1 = X_val[Y_indices == 1]
+        # Convert predictions into an array and reshape back into a grid
+        def draw_boundary(xx, yy, y_predictions, X_val, Y_val, epoch, plot_directory):
+            y_predictions = np.array(y_predictions)
+            zz = y_predictions.reshape(xx.shape)
     
-    # Scatter plot for the validation set with legend
-        plt.scatter(class0[:, 0], class0[:, 1], c='blue', edgecolor='k', marker='o', s=20, label='Class 0')
-        plt.scatter(class1[:, 0], class1[:, 1], c='red', edgecolor='k', marker='o', s=20, label='Class 1')
+            # Plot the grid of x, y, and z values as a surface
+            contour = plt.contourf(xx, yy, zz, cmap='Paired')
+            cbar = plt.colorbar(contour)
+            cbar.set_ticks([0, 1])
+            cbar.set_ticklabels(['Class 0', 'Class 1'])
+        
+            # Separate the points by class
+            class0 = X_val[Y_indices == 0]
+            class1 = X_val[Y_indices == 1]
     
-    # Add legend
-        plt.legend()
+            # Scatter plot for the validation set with legend
+            plt.scatter(class0[:, 0], class0[:, 1], c='blue', edgecolor='k', marker='o', s=20, label='Class 0')
+            plt.scatter(class1[:, 0], class1[:, 1], c='red', edgecolor='k', marker='o', s=20, label='Class 1')
     
-    # Add titles and labels
-        plt.title(f"Decision Boundary for test dataset after epoch {epoch} and boundary {self.boundary}")
-        plt.xlabel('VDC1')
-        plt.ylabel('VDC2')
+            # Add legend, titles, and labels
+            plt.legend()
+            plt.title(f"Decision Boundary for test dataset after epoch {epoch}")
+            plt.xlabel('VAC1')
+            plt.ylabel('VAC2')
     
-    # Show plot
-        plt.show()
+            # Ensure the plot_directory exists; if not, create it
+            if not os.path.exists(plot_directory):
+                os.makedirs(plot_directory)
+            
+            # Save underlying data using epoch in the file name
+            data_to_save = {
+                'xx': xx,
+                'yy': yy,
+                'zz': zz,
+                'class0': class0,
+                'class1': class1,
+                'X_val': X_val,
+                'Y_val': Y_val,
+                'epoch': epoch
+            }
+            data_path = os.path.join(plot_directory, f"plot_data_{epoch}.npz")
+            np.savez(data_path, **data_to_save)
+            
+            # Save the plot with the epoch included in the file name
+            save_path = os.path.join(plot_directory, f"decision_boundary_{epoch}.png")
+            plt.savefig(save_path, bbox_inches='tight')
+            
+            # Close the figure to start fresh in the next iteration
+            plt.close()
 
 
-    def initialize_network_layers(self, simulation_details, network_details):
-        
-        
-        init_config = simulation_details["initializer"]
-        fc_layers = simulation_details["layers"]["fully_connected"]
-        lower_cond_bound = simulation_details["layers"]["lower_cond_bound"]
-        upper_cond_bound = simulation_details["layers"]["upper_cond_bound"]
-        
-        
-        lr_layer1 = simulation_details["learning_rate_factors"]["lr_layer1"]
-        lr_layer2 = simulation_details["learning_rate_factors"]["lr_layer2"]
-        
-        gamma_layer1 = simulation_details["gamma_values"]["layer1"]
-        gamma_layer2 = simulation_details["gamma_values"]["layer2"]
-        
-        beta = simulation_details["beta"]
+        draw_vol_amplification(xx, yy, input_amp_voltages, output_amp_voltages,epoch, plot_directory)
+        draw_boundary(xx, yy, y_predictions, X_val, Y_val, epoch, plot_directory)
         
         
         
-        
-        
-        nonlin_parameters = network_details["nonlin_parameters_perfect"]
-        vdc_bias = network_details["AC_biases"]["source_dc_bias"]
-        freq = network_details["frequency"]
-        
-        
-        
-        synapse = "resistive"
-        iparams = init_config["init_type"]
-        wparams = init_config["params"]
-        weight_initializer = Initializer(iparams, wparams)
-        print(f"Doing simulations for {wparams}")
-        layers = []
-        
-        simulation_type = self.simulation_type
-        if simulation_type == "DC":
-            nonlin_parameters = network_details["nonlin_parameters_perfect"]
-        elif simulation_type == "FSST":
-            nonlin_parameters = network_details["nonlin_parameters_ss"]
-
-        
-        
-        input_layer = InputLayer(fc_layers[0], vdc_bias, freq, simulation_type, which_layer=0)
-        layers.append(input_layer)
-        
-        # First Dense Layer
-        n_of_inputs = fc_layers[0]
-        n_of_outputs = fc_layers[1]
-        which_layer = 0
-        layer1 = DenseLayer(
-            n_of_inputs, n_of_outputs, which_layer, synapse, 
-            lr_layer1, gamma_layer1, beta, initializer=weight_initializer,
-            lower_cond_bound=lower_cond_bound, upper_cond_bound=upper_cond_bound
-        )
-        layer1.initialize_res()
-        layer1.initialize_W()
-        layers.append(layer1)
-        
-        # Non-linear Layer
-        layer2 = NonLinearLayer(n_of_outputs, which_layer, nonlin_parameters, neuron_type = self.neuron)
-        layers.append(layer2)
-        
-        # Second Dense Layer
-        n_of_inputs = fc_layers[1]
-        n_of_outputs = fc_layers[2]
-        which_layer = 1
-        layer3 = DenseLayer(
-            n_of_inputs, n_of_outputs, which_layer, synapse, 
-            lr_layer2, gamma_layer2, beta, initializer=weight_initializer,
-            lower_cond_bound=lower_cond_bound, upper_cond_bound=upper_cond_bound
-        )
-        layer3.initialize_res()
-        layer3.initialize_W()
-        layers.append(layer3)
-        
-        # Output Layer
-        n_of_inputs = fc_layers[2]
-        layer4 = OutputLayer(n_of_inputs, freq, simulation_type, which_layer)
-        layers.append(layer4)
-        
-        return layers
+        fet_identifiers = ["0_2_1", "1_3_2"]      
+        all_nodes = self.all_nodes
+        aex_file = aex_file_path
+        calculate_transconductance(eldo_process, fets_identifier, aex_file, all_nodes, debug)
 
 def predict(process, X, vol_sources, debug, resistor_value_dict, node_to_vdc, node_voltages, output_nodes, boundary, bias):
     
@@ -785,161 +742,157 @@ def predict(process, X, vol_sources, debug, resistor_value_dict, node_to_vdc, no
     return pred_outputs
     
 
-def main(): #probably objective function
+def train(sim_params, process_id = None): #probably objective function
+
+    fet_identifiers = ["0_1_1", "1_1_1"]
+    transcon_calc = False
+
+    #sim_params = SimulationParameters()
+    layers = initialize_network_layers(sim_params) #here also the weight matrices are initialized
+    builder = netlist_builder(layers, sim_params)
+    
+    
+    #Here I need to generate a new file name
+    ########
+    
+    input_files = create_filenames(sim_params.output_dir, sim_params.sample_file, process_id)
+    full_subfolder_path, new_sample_file, aex_file_path = input_files
+    printfile = os.path.join(full_subfolder_path, "PRINTFILE.TXT")
 
 
-
-    # Load the configuration file
-    with open("config_amp_imp.json", "r") as file:
-        config = json.load(file)
-    
-    # #  
-    simulation_details = config["simulation_details"]
-    network_details = config["network_details"]
-    dataset_details = config["dataset_details"]
-    print(simulation_details)
-    print(network_details)
-
-    ########################
-    network_config = network_details["network_files"]
-    input_files = create_filenames(network_config)
-    
-    #Extract dataset
-    dataset_config = dataset_details
-    n_of_epochs = dataset_config["n_of_epochs"]
-    scale_factor = dataset_config["scale_factor"]
-    noise = dataset_config["noise"]
-    bias = dataset_config["bias"]
-    num_samples = dataset_config["num_samples"]
-    batch_size = dataset_config["batch_size"]
-    
+    all_nodes = extract_all_nodes_voltages(layers)
+    builder.build_netlist(new_sample_file, transcon_calc, fet_identifiers, printfile)
 
     
-    # Initialize weight initializer
-    # init_config['params'] = {key: float(value) for key, value in init_config['params'].items()}
-    # weight_initializer = Initializer(init_type=init_config["init_type"], params=init_config["params"])
-    
-    
-    #Initialize the network
-    
-    # Initialize the network layers
-    
-    scale_factor_list = [0.7, 0.8, 0.9]
-    #batch_size = 32
-    for scale_factor in scale_factor_list:
-        
-        full_subfolder_path, new_sample_file, aex_file_path = input_files
-        #layers = initialize_network_layers(simulation_details, network_details)
-        
-        #Initialize the network
-        net = MyNetwork(config, input_files, scale_factor)
-        #Build the netlist
-        net.build_netlist()
+    net = MyNetwork(layers, sim_params, input_files, all_nodes)
+
          
-        simulation = "moons_simulation"
+    simulation = "digits_simulation"
         # Load and center the dataset
-        if simulation == "moons_simulation":
-            X_t, Y_t = prepare_moons_data(num_samples, noise=0.1, random_state=41)
-        elif simulation == "digits_simulation":
-            X_t, Y_t = prepare_digits_data()
-        elif simulation == "iris_simulation":
-            X_t, Y_t = prepare_iris_data()
+    if simulation == "moons_simulation":
+        X_t, Y_t = prepare_moons_data(sim_params.num_samples, noise=0.1, random_state=41)
+    elif simulation == "digits_simulation":
+        X_t, Y_t = prepare_digits_data()
+    elif simulation == "iris_simulation":
+        X_t, Y_t = prepare_iris_data()
         
         #X, Y = linear_regression(n_of_samples = 1200,a = float(1), b = float(7))
         
         
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X_t) * scale_factor
-        #X_scaled = X_scaled
+    #scaler = StandardScaler()
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X_t) * sim_params.scale_factor
 
-        # Process the scaled wine data with onehot_pos_neg_inputs.
-        # Note: scale_factor, bias, and output_scale should be defined previously.
-        input_function = onehot_pos_neg_inputs_1bias_double_input
-        X, Y = onehot_pos_neg_inputs_1bias_double_input(X_scaled, Y_t, bias = 0.2, output_scale=1)
-        
+    input_function = onehot_pos_neg_inputs_1bias_double_input
+    X, Y = onehot_pos_neg_inputs_1bias_double_input(X_scaled, Y_t, net.bias)
 
-        
-        # Scale the features using StandardScaler
-        #scaler = StandardScaler()
+    X_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=0.2, shuffle=True)
 
-        
-        # Optionally, you can visualize the data here (if needed)
-        #plot_moons_data(X[:, :2], Y)  # Adjust function name if necessary
-        
-        # Split the processed data into training and test sets.
-        #from sklearn.model_selection import train_test_split
-        X_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=0.2, shuffle=True)
-        
-        #vac+bias is the bias of the ac voltage source, vbias is the additional bias that is currently not used
-        #bias_dict = {"VAC_BIAS" : v_ac_bias}
-        
-        #This does not work and it really should work
-        pids = get_eldo_pids(eldo_identifier = 'eldo_64.exe')
-        eldo_process = start_eldo_simulation(new_sample_file, full_subfolder_path, m_thread = True, noascii =  True, debug=True )
-        signal.signal(signal.SIGINT, lambda sig, frame: signal_handler(sig, frame, eldo_process))
-        signal.signal(signal.SIGTERM, lambda sig, frame: signal_handler(sig, frame, eldo_process))
-        
+
+
+    debug = False
+
+    #pids = get_eldo_pids(eldo_identifier = 'eldo_64.exe')
+    eldo_process, q = start_eldo_simulation_drain(new_sample_file, full_subfolder_path, m_thread = True, noascii =  True, debug = False)
+    setattr(net, 'q', q)
+    #wait_for_eldos_completion_initialization(eldo_process, debug)
+
+    #signal.signal(signal.SIGINT, lambda sig, frame: signal_handler(sig, frame, eldo_process))
+    #signal.signal(signal.SIGTERM, lambda sig, frame: signal_handler(sig, frame, eldo_process))
+    
+    
+    
+    
+    
         #net.draw_grid(eldo_process, X_train, y_train, epoch, n_of_node_voltages, debug = False)
-        accuracy_list = []
-        big_loss_list = []
-        diff1_list = []
-        diff2_list = []
-        ratio1_mean_list = []
-        ratio2_mean_list = []        
+    accuracy_list = []
+    big_loss_list = []
+    diff1_list = []
+    diff2_list = []
+    ratio1_mean_list = []
+    ratio2_mean_list = []        
         
-        weight_matrices_1 = [net.layers[1].W]
-        weight_matrices_2 = [net.layers[3].W]
-        initial_weights1 = net.layers[1].W
-        initial_weights2 = net.layers[3].W
+    weight_matrices_1 = [net.layers[1].W]
+    weight_matrices_2 = [net.layers[3].W]
+    initial_weights1 = net.layers[1].W
+    initial_weights2 = net.layers[3].W
         
-        dynamic_outputs = False
-        targets = None
-        draw_grid_to_plot = [1, 5, 9, 29]
-        for epoch in range(1, n_of_epochs +1):
+    dynamic_outputs = False
+    targets = None
+    draw_grid_to_plot = [1, 2, 5, 9, 15, 25, 35]
+    
+
+    
+    
+    
+    # Define the base directory
+    
+    base_dir = sim_params.trained_models_dir#"/home/filip/simulations/trained_models"
+            
+    # Generate a subfolder name with the current date and time
+    date_time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    full_subfolder_path = f"{simulation}_{date_time_str}_{process_id}"
+            
+    # Combine the base directory with the subfolder name
+    output_dir_path = os.path.join(base_dir, full_subfolder_path)
+    os.makedirs(output_dir_path, exist_ok=True)
+    
+    
+        
+    plot_directory = os.path.join(output_dir_path, "plots")       
+    os.makedirs(plot_directory, exist_ok=True)
+    
+    
+    
+    try: 
+        for epoch in range(1, sim_params.n_of_epochs +1):
+            #calculate_transconductance(eldo_process, fet_identifiers, new_sample_file, net.aex_file_path, net.all_nodes, debug)
             start_epoch = time.time()
-            #NEED TO MANUALLY SET THEM, INITIALLY EVERYTHING IS 0
-            #set_input_voltages(eldo_process, bias_dict, debug = True)
-            #print(f"Starting epoch {epoch} for boundary {boundary}, batch size {batch_size} and scale factor {scale_factor}")
+                #NEED TO MANUALLY SET THEM, Inew_sample_file+NITIALLY EVERYTHING IS 0
+                #set_input_voltages(eldo_process, bias_dict, debug = True)
+                #print(f"Starting epoch {epoch} for boundary {boundary}, batch size {batch_size} and scale factor {scale_factor}")
             if dynamic_outputs:
                 targets = net.calc_desired_outputs(eldo_process, X, Y, epoch= 0, debug = False)
-            results = net.free_nudged_train(eldo_process, X_train, y_train, targets, epoch, optimizer = None, debug = False)
-            if epoch in draw_grid_to_plot:
-                net.draw_grid(eldo_process, X_train, y_train, input_function, epoch, debug = False)
 
+            optimizer = None
+            results = net.free_nudged_train(eldo_process, X_train, y_train, targets, epoch, optimizer, debug)
+            #if epoch in draw_grid_to_plot:
+            #   net.draw_grid(eldo_process, X_train, y_train, input_function, epoch, plot_directory, debug = False)
+    
             accuracy_list.append(results["accuracy"])
             big_loss_list.append(results["loss_list"])
             weight_matrix1 = results["weight_matrix_1"]
             weight_matrix2 = results["weight_matrix_2"]
-            
+                
             diff1, diff2 = results["output_list"]
             diff1_list.extend(diff1)
             diff2_list.extend(diff2)
-            #plot_moving_averages(diff1_list, diff2_list, window_size=40)
-            
-            
-            
+                #plot_moving_averages(diff1_list, diff2_list, window_size=40)
+                
+                
+                
             ratio1_mean, ratio2_mean = results["ratio_list"]
             ratio1_mean_list.append(ratio1_mean)
             ratio2_mean_list.append(ratio2_mean)
-            
-            
+                
+                
             end_epoch = time.time()
             total_time = end_epoch - start_epoch
-            print(f"Time for epoch {total_time}")
-            #rel_change1 = compute_relative_changes(weight_matrices, epsilon=1e-10)
-            
-            
-            #plot_weight_histogram(weight_matrix1, bins=50, title='Weight Matrix 1 Histogram')
-            #plot_weight_histogram(weight_matrix2, bins=50, title='Weight Matrix 2 Histogram')
+            #print(f"Time for epoch {total_time}")
+                #rel_change1 = compute_relative_changes(weight_matrices, epsilon=1e-10)
+                
+                
+                #plot_weight_histogram(weight_matrix1, bins=50, title='Weight Matrix 1 Histogram')
+                #plot_weight_histogram(weight_matrix2, bins=50, title='Weight Matrix 2 Histogram')
             weight_matrices_1.append(results["weight_matrix_1"])
             weight_matrices_2.append(results["weight_matrix_2"])
             
-            
+                
             abs_change1 = compute_absolute_changes(weight_matrices_1)
             abs_change2 = compute_absolute_changes(weight_matrices_2)
             
             
-            
+
             
             
             #plot_average_relative_change(rel_change1, title="Average Relative Weight Change per Epoch")
@@ -953,40 +906,27 @@ def main(): #probably objective function
             
             #net.draw_grid(eldo_process, X_train, y_train, input_function, epoch, debug = False)
             #accuracy = net.free_test(eldo_process, layers, X_test, y_test, epoch, loss_fn, metrics = None, debug = False)
-        # Define the base directory
-        base_dir = "/home/filip/simulations/trained_models"
+
+                    # Save the configuration to a JSON file
+    
         
-        # Generate a subfolder name with the current date and time
-        date_time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-        full_subfolder_path = f"{simulation}_{date_time_str}"
-        
-        # Combine the base directory with the subfolder name
-        output_dir_path = os.path.join(base_dir, full_subfolder_path)
-        os.makedirs(output_dir_path, exist_ok=True)
-                # Save the configuration to a JSON file
-        config_file_path = os.path.join(output_dir_path, "config.json")
-        with open(config_file_path, "w") as f:
-            json.dump(config, f, indent=4)
-        print(f"Configuration saved to {config_file_path}")
-        
-        # --- Save Weight Matrices ---
-        # Assume results is a dictionary containing your trained weight matrices:
-        # results["weight_matrix_1"] and results["weight_matrix_2"]
+            
+            # --- Save Weight Matrices ---
+            # Assume results is a dictionary containing your trained weight matrices:
+            # results["weight_matrix_1"] and results["weight_matrix_2"]
         weights_file_path = os.path.join(output_dir_path, "weights.npz")
         np.savez(weights_file_path, 
                  weight_matrix_1=results["weight_matrix_1"], 
                  weight_matrix_2=results["weight_matrix_2"])
-        print(f"Weights saved to {weights_file_path}")
-        
-        
-        
-        
-        
-        
-
-        plot_directory = os.path.join(output_dir_path, "plots")       
-        os.makedirs(plot_directory, exist_ok=True)
-
+       #print(f"Weights saved to {weights_file_path}")
+            
+    
+    
+        config_file_path = os.path.join(output_dir_path, "config") 
+        save_sim_parameters(sim_params, config_file_path)
+    
+    
+    
         plot_accuracy(accuracy_list, plot_directory)
         plot_cosine_similarity(ratio1_mean_list, plot_directory, title = "Cosine sim for weight matrix 1")
         plot_cosine_similarity(ratio2_mean_list, plot_directory, title  = "Cosine sim for weight matrix 2")
@@ -995,13 +935,54 @@ def main(): #probably objective function
         plot_average_loss(big_loss_list, plot_directory)
         plot_average_relative_change(abs_change1, title="Average Absolute Weight Change per Epoch weightmatrix 1")
         plot_average_relative_change(abs_change2, title="Average Absolute Weight Change per Epoch weightmatrix 2")
-
-        plot_weight_matrix_evolution_lines(weight_matrices_1, plot_directory, title='Weight Evolution Over Epochs')
-        plot_weight_matrix_evolution_lines(weight_matrices_2, plot_directory, title='Weight Evolution Over Epochs')
-        delete_file_with_chi_extension(new_sample_file)
-
-
+    
+        plot_weight_matrix_evolution_lines(weight_matrices_1, plot_directory, title='Weight Matrix 1 Evolution Over Epochs')
+        plot_weight_matrix_evolution_lines(weight_matrices_2, plot_directory, title='Weight Matrix 2 Evolution Over Epochs')
+        #delete_file_with_chi_extension(new_sample_file)
+        
+        
+        
+                # Save the key metrics data for future use
+        metrics_data = {
+            'accuracy_list': accuracy_list,                # accuracy per epoch
+            'losses': big_loss_list,                        # loss values (big_loss_list)
+            'weight_matrix_evolution_1': weight_matrices_1,   # evolution of weight matrix 1
+            'weight_matrix_evolution_2': weight_matrices_2    # evolution of weight matrix 2
+        }
+        
+        data_path = os.path.join(plot_directory, 'metrics_data.npz')
+        np.savez_compressed(data_path, **metrics_data)
+        
+        
+        
+        send_quit_command(eldo_process)
+        remove_directory(full_subfolder_path)
+        return accuracy_list
+        
+    except:
+        config_file_path = os.path.join(output_dir_path, "config") 
+        save_sim_parameters(sim_params, config_file_path)
+                # Save the key metrics data for future use
+        metrics_data = {
+            'accuracy_list': accuracy_list,                # accuracy per epoch
+            'losses': big_loss_list,                        # loss values (big_loss_list)
+            'weight_matrix_evolution_1': weight_matrices_1,   # evolution of weight matrix 1
+            'weight_matrix_evolution_2': weight_matrices_2    # evolution of weight matrix 2
+        }
+        send_quit_command(eldo_process)
+        remove_directory(full_subfolder_path)
         
     
 if __name__ == "__main__":
-    main()
+    gamma_values = [1e-8, 5e-9]
+    gamma_value = [1e-8, 5e-9]
+    batch_size = 32
+    beta = 5e-5
+    #scale_factor_list = [0.4, 0.5] 
+    #bias_list = [0.2, 0.3, 0.4, 0.5, 0.6]
+    scale_factor_list = [0.4] 
+    scale_factor = 0.4
+    bias_list = [0.2]    
+    bias = 0.3
+    sim_params = SimulationParameters(scale_factor, bias, batch_size, beta, gamma_value)
+    train(sim_params, process_id = None)

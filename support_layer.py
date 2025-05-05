@@ -1,7 +1,7 @@
 #############
 ## SUPPORT FUNCTIONS FOR THE LAYER CLASS APPROACH ##
 
-import subprocess
+import subprocess, threading, queue, time
 import time
 import re
 import signal
@@ -9,6 +9,19 @@ import os
 import sys
 import datetime
 import numpy as np
+import json
+import shutil
+import random
+
+
+
+def remove_directory(directory_path):
+    shutil.rmtree("directory_path", ignore_errors=True)
+    print(f"Succesfully removed directory{directory_path}")
+
+
+
+
 
 def generate_filename(base_path, extension=".cir", identifier=None):
     """
@@ -34,6 +47,23 @@ def generate_filename(base_path, extension=".cir", identifier=None):
         path = f"{base_path}_{datetime_stamp}{extension}"
     
     return path
+
+
+
+def save_sim_parameters(sim_params, file_path):
+    """
+    Save the simulation parameters to a JSON file.
+
+    Args:
+        sim_params (SimulationParameters): An instance of SimulationParameters.
+        file_path (str): The file path where the JSON data will be saved.
+    """
+    try:
+        with open(file_path, 'w') as file:
+            json.dump(sim_params.__dict__, file, indent=4)
+        print(f"Simulation parameters successfully saved to {file_path}")
+    except Exception as e:
+        print(f"An error occurred while saving simulation parameters: {e}")
 
 
 def compute_cosine_similarity(deltaG, W_before, W_after):
@@ -68,18 +98,21 @@ def compute_cosine_similarity(deltaG, W_before, W_after):
     
     return cosine_sim
 
-def create_filenames(network_config):
+def create_filenames(output_dir, sample_file, process_id = None):
     """
     Creates a new subfolder in the output directory, generates circuit filenames,
     and returns the full paths for the .cir and .aex files.
     """
     # Step 1: Create a new subfolder
-    subfolder_name = generate_filename("my_experiment", extension=None)
-    full_subfolder_path = os.path.join(network_config["output_dir"], subfolder_name)
+    subfolder_name = generate_filename("my_experiment", extension = None)
+    full_subfolder_path = os.path.join(output_dir, subfolder_name)
+    if process_id is not None:
+        full_subfolder_path = full_subfolder_path + str(process_id)
+        
     os.makedirs(full_subfolder_path, exist_ok=True)
     
     # Step 2: Extract base name from sample_file
-    base_sample_file = os.path.basename(network_config["sample_file"])
+    base_sample_file = os.path.basename(sample_file)
     base_sample_name, _ = os.path.splitext(base_sample_file)
     
     # Step 3: Generate filenames
@@ -98,7 +131,7 @@ def create_filenames(network_config):
 def extract_all_nodes_voltages(layers):
     all_node_voltages = []
     for layer in layers:
-        if layer.type == 'resistive':
+        if layer.trainable:
             in_node = layer.input_node_list
             out_node = layer.output_node_list
             all_node_voltages.extend(in_node)
@@ -403,6 +436,71 @@ def parse_aex_file_from_end_timed(filename, n_of_node_voltages, simulation_type,
     return timings
 
 
+def parse_aex_file_from_end_offset(filename, n_of_node_voltages, simulation_type, voltage_dict_free, seek_position = None):
+
+    
+    # Part 1: Seek 
+    with open(filename, 'r') as file:
+        file.seek(seek_position)
+        lines = file.readlines()
+
+    
+    # Part 2: Collect the last n_of_node_voltages non-blank lines by iterating backwards.
+    selected_lines = []
+    count = 0
+    for line in reversed(lines):
+        if line.strip() == "":
+            break
+        selected_lines.append(line)
+        count += 1
+        if count >= n_of_node_voltages:
+            break
+
+    
+    # Part 3: Process the selected lines.
+    updated_keys = set()
+    for line in reversed(selected_lines):
+        stripped_line = line.strip()
+        
+        if simulation_type == "DC":
+            if stripped_line.startswith("*V("):
+                parts = stripped_line.split()
+                # Extract node name and value.
+                node_name = parts[0][3:-1].strip("'\"")
+                node_value = float(parts[2])
+                if node_name in voltage_dict_free:
+                    voltage_dict_free[node_name] = node_value
+                    updated_keys.add(node_name)
+        elif simulation_type == "AC":
+            if stripped_line.startswith("*VR("):
+                parts = stripped_line.split()
+                node_name = parts[0][4:-1].strip("'\"")
+                node_value = float(parts[2])
+                if node_name in voltage_dict_free:
+                    voltage_dict_free[node_name] = node_value
+                    updated_keys.add(node_name)
+        elif simulation_type == "FSST":
+            if stripped_line.startswith("*YVAL("):
+                parts = stripped_line.split()
+                signal_str = parts[0]
+                start_idx = signal_str.find('V(') + 2  # position after 'V('
+                end_idx = signal_str.find(')', start_idx)
+                node_name = signal_str[start_idx:end_idx].split(',')[0]
+                node_value = float(parts[-1])
+                if node_name in voltage_dict_free:
+                    voltage_dict_free[node_name] = node_value
+                    updated_keys.add(node_name)
+    end_process = time.perf_counter()
+
+    
+    # Part 4: Check for missing keys.
+    start_check = time.perf_counter()
+    missing_keys = set(voltage_dict_free.keys()) - updated_keys
+    if missing_keys:
+        raise ValueError(f"Not all keys were updated. Missing keys: {missing_keys}")
+
+
+
 
 
 
@@ -597,12 +695,64 @@ def start_eldo_simulation(sample_file, output_dir, m_thread, noascii, debug):
             eldo_command,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
+            stderr=None,
             text=True
         )
     except Exception as e:
         print(f"Error starting Eldo simulation: {e}")
         return None
+
+
+
+def start_eldo_simulation_drain(sample_file, output_dir, m_thread, noascii, debug):
+    """Starts the Eldo simulation subprocess in interactive mode, ensuring directory exists."""
+    try:
+        # Manually set the PATH to include the directory where Eldo is located
+        os.environ['PATH'] += ':/cao/Softs/cadence/INNOVUS162/bin'
+        os.environ['PATH'] += ':/cao/Softs/cadence/SPECTRE191/tools/bin'
+
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir, exist_ok=True)
+
+        # Base command for starting Eldo
+        eldo_command = ["eldo", sample_file, "-inter"]
+
+        # Conditionally add multi-threading argument
+        if m_thread:
+            eldo_command += ["-mthread"]
+
+        if noascii:
+            eldo_command += ["-noascii"]
+
+
+        # Specify the output directory
+        eldo_command.append("-createoutpath")
+        eldo_command.append(output_dir)
+
+
+        proc =  subprocess.Popen(
+            eldo_command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=None,
+            text=True
+        )     
+        
+        q = queue.Queue()
+        def _drain():
+            for line in proc.stdout:
+                q.put(line)
+        t = threading.Thread(target=_drain, daemon=True)
+        t.start()
+
+        return proc, q
+
+    except Exception as e:
+        print(f"Error starting Eldo simulation: {e}")
+        return None
+
+
+
 
 def signal_handler(sig, frame, process):
     """Signal handler that sends 'QUIT' to the subprocess."""
@@ -619,6 +769,23 @@ def send_quit_command(process):
     process.terminate()
     process.wait()
     print("Eldo process terminated.")
+
+
+def send_quit_command_to_eldo(process, debug):
+    """Sends a command to the Eldo subprocess, ensuring it's still open."""
+    command = "QUIT"
+    if process.poll() is None:  # None means the process is still running
+        if debug: print(f"Sending command: {command}")
+        try:
+            process.stdin.write(command + "\n")
+            process.stdin.flush()
+            print("Eldo process terminated.")
+        except Exception as e:
+            print(f"Error sending command: {e}")
+    else:
+        print("Cannot send command, subprocess has terminated.")
+
+
 
 
 def send_command_to_eldo(process, command, debug):
@@ -655,22 +822,6 @@ def set_eldo_simulation(process, mode, input_values, resistor_value_dict,  inudg
 
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
-        
-        
-# def wait_for_eldos_completion(process, debug):
-#     """
-#     Waits until the specified completion message is found in the process output.
-#     """
-#     completion_message = "Eldo interactive runs completed."
-
-#     while True:
-#         line = process.stdout.readline().strip()
-#         if line:
-#             if debug: print(f"Reading output: {line}")
-#             if completion_message in line:
-#              #   print("Completion message detected.")
-#                 break 
-        
 
     
 def wait_for_eldos_completion(process, debug):
@@ -704,14 +855,70 @@ def wait_for_eldos_completion(process, debug):
                 if debug: print("Completion message detected.")
                 break
 
-    # Optionally, write the captured lines to a file
-    with open('captured_voltages.txt', 'w') as file:
-        for line in lines_of_interest:
-            file.write(line + '\n')
+    # # Optionally, write the captured lines to a file
+    # with open('captured_voltages.txt', 'w') as file:
+    #     for line in lines_of_interest:
+    #         file.write(line + '\n')
 
-    if debug: print("Captured lines have been written to captured_voltages.txt.")
     return lines_of_interest
 
+
+
+def wait_for_eldos_completion_drain(process, q, debug):
+    """
+    Blocks until the Eldo completion message appears in the queue,
+    capturing any V_IN_/V_OUT_ lines between the DC-analysis markers.
+    """
+    completion_message = "Eldo interactive runs completed."
+    start_capture_marker = "***>Current simulation completed"
+    lines_of_interest = []
+    capturing = False
+
+    while True:
+        # Block until the next line is available from the reader thread
+        raw = q.get()  
+        line = raw.strip()
+
+        if debug:
+            print(f"Reading output: {line}")
+
+        # Once we see the DC-analysis-complete marker, start collecting
+        if start_capture_marker in line:
+            capturing = True
+
+        # If we're in capture mode and see a voltage line, stash it
+        if capturing and ("V_IN_" in line or "V_OUT_" in line):
+            lines_of_interest.append(line)
+
+        # If we see the final completion message, break out
+        if completion_message in line:
+            if debug:
+                print("Completion message detected.")
+            break
+
+    return lines_of_interest
+
+
+
+
+
+
+
+
+
+def wait_for_eldos_completion_initialization(process, debug):
+    """
+    Waits until the specified completion message is found in the process output.
+    """
+    completion_message = ">eldo"
+
+    while True:
+        line = process.stdout.readline().strip()
+        if line:
+            if debug: print(f"Reading output: {line}")
+            if completion_message in line:
+             #   print("Completion message detected.")
+                break
 
 def wait_for_eldos_completion_old(process, debug):
     """

@@ -1,0 +1,3 @@
+START report: Tue Apr  1 13:05:50 2025 
+** Warning: (eldo-109)  NODE "V_OUT_0_1": This bulk node is not biased. 
+** Warning: (eldo-109)  NODE "V_OUT_0_2": This bulk node is not biased. 

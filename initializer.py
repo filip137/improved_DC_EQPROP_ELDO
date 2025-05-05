@@ -6,18 +6,16 @@ import numpy as np
         ## 
 
 class Initializer:
-    def __init__(self, init_type, params=None, L=1e-4, U=1e-1, g_min=None, g_max=None, seed = 40):
+    def __init__(self, init_type, params, seed, g_min=None, g_max=None):
         self.init_type = init_type
         self.params = params if params is not None else {}
-        self.L = L  # Lower bound
-        self.U = U  # Upper bound
         self.g_min = g_min  # Minimum conductance
         self.g_max = g_max  # Maximum conductance
         self.seed = seed
     def get_bounds(self):
         # Retrieve bounds from params or use class variables if not provided
-        L = self.params.get("L", self.L)
-        U = self.params.get("U", self.U)
+        L = self.params['L']
+        U = self.params['U']
         return L, U
 
     def clip_conductances(self, w):

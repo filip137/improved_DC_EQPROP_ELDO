@@ -1,0 +1,35 @@
+***
+*** Generated for: eldoD
+*** Generated on: Mar 31 12:15:45 2025
+*** Design library name: current_sources
+*** Design cell name: pmos_cs_symbol
+*** Design view name: schematic
+.GLOBAL
+.PARAM PMOS_CS_W=6u
+.PARAM PMOS_CS_VDD=3.3
+.PARAM PMOS_CS_V_BIAS=1.7
+.PARAM LOW_NOISE_OPTION=0
+.PARAM FORM=0
+.LIB /cao/DK/ST/HCMOS9A_10.9/Addon_NVM_H9A@2018.4.1/tools/eldo/model_oxram/OxRRAM.lib OxRRAM_TT
+.LIB /home/filip/CMOS130/corners.eldo 
+
+*** Library name: current_sources
+*** Cell name: pmos_cs
+*** View name: schematic
+.SUBCKT PMOS_CS GROUND INOUTPUT_PMOS_CS
+    V20 NET4 GROUND DC PMOS_CS_V_BIAS
+    V21 NET2 GROUND DC PMOS_CS_VDD
+XM16 INOUTPUT_PMOS_CS NET4 NET2 NET2 EP5V0_BS3JU w=PMOS_CS_W l=2e-06
++nfing=1 ncrsd=1 number=1 srcefirst=1 ngcon=1 mismatch=1 po2act=-1
++dvt_mdev=0 dmu_mdev=0 soa=1 lpe=0
+.ENDS
+*** End of subcircuit definition.
+
+*** Library name: current_sources
+*** Cell name: pmos_cs_symbol
+*** View name: schematic
+XI0 NET01 NET1 PMOS_CS
+.OP
+.DC
+.PROBE V
+.END

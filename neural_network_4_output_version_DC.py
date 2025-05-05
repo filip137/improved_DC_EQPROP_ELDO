@@ -4,7 +4,9 @@ from datasets import *
 import numpy as np
 import time
 from support_layer import *
-from eldo_support_functions import *
+from amplifier_details import netlist_data
+from netlist_data import NETLIST_DEFINITIONS, PARAMS
+from plotting_and_support import *
 from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import MinMaxScaler
 from loss_functions import * 
@@ -16,7 +18,6 @@ import subprocess
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 import json
-from ac_plots import *
 from netlist_data import NETLIST_DEFINITIONS, PARAMS
 #Initialize a complete neural network and build a netlist
 
