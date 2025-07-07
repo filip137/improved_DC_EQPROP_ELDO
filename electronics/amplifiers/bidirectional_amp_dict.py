@@ -1,3 +1,5 @@
+#16.6 The decoupling capacitor added at the output
+
 new_bidir_dict = {"PARAMS" : """
 .PARAM V_CASCODE_CCCS=2.5
 .PARAM PMOS_CCCS_CASCADE_BIAS=1.7
@@ -17,8 +19,8 @@ new_bidir_dict = {"PARAMS" : """
 .PARAM COMMON_DRAIN_RES=10k
 .PARAM CD1_W=4u
 .PARAM CD1_L=650n
-.PARAM CAP_CCCS=1n
-.PARAM CAP=1n
+.PARAM CAP_CCCS=1p
+.PARAM CAP=1p
 .PARAM VDD=3.3
 .PARAM RS_CD=5k
 .PARAM RS=10k
@@ -83,10 +85,10 @@ R5 VDD OUTPUT_CS_2 RD
 R3 VDD OUTPUT_CS_1 RD
 R21 VDD NET03 R_VCVS_BIAS1
 R19 NET7 0 RS
-R2 OUTPUT_VCVS 0 RS_CD
+R2 OUTPUT_VCVS_0 0 RS_CD
 R4 NET8 0 RS
 R1 NET03 0 R_VCVS_BIAS2
-XM13 VDD OUTPUT_CS_2 OUTPUT_VCVS 0 EN5V0_BS3JU w=CD1_W l=CD1_L nfing=1
+XM13 VDD OUTPUT_CS_2 OUTPUT_VCVS_0 0 EN5V0_BS3JU w=CD1_W l=CD1_L nfing=1
 +ncrsd=1 number=1 srcefirst=1 ngcon=1 mismatch=1 po2act=-1 dvt_mdev=0
 +dmu_mdev=0 soa=1 lpe=0
 XM12 OUTPUT_CS_2 OUTPUT_CS_1 NET7 0 EN5V0_BS3JU w=2e-06 l=CS2_L nfing=1
@@ -96,6 +98,7 @@ XM11 OUTPUT_CS_1 NET03 NET8 0 EN5V0_BS3JU w=CS1_W l=2e-06 nfing=1 ncrsd=1
 +number=1 srcefirst=1 ngcon=1 mismatch=1 po2act=-1 dvt_mdev=0 dmu_mdev=0
 +soa=1 lpe=0
 C0 INPUT_VCVS NET03 CAP
+C1 OUTPUT_VCVS_0 OUTPUT_VCVS_0 CAP
 V0 VDD 0 DC VDD
 .ENDS
 *** End of subcircuit definition.

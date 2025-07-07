@@ -1,14 +1,25 @@
-from layer_class import *
 from initializer import *
-from datasets import * 
+import datasets as ds
 import numpy as np
 import time
+import traceback
+from netlist_generation_files import (
+    BaseLayer,
+    InputLayer,
+    DenseLayer,
+    NonLinearLayer,
+    OutputLayer,
+    netlist_builder,
+    SimulationParameters,
+    initialize_network_layers,
+)
+
+
 from support_layer import *
 from eldo_support_functions import *
 from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import MinMaxScaler
 from loss_functions import * 
-from sklearn.datasets import load_wine
 from sklearn.model_selection import train_test_split
 from datetime import datetime
 import signal
@@ -17,9 +28,6 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 import json
 from ac_plots import *
-from simulation_parameters import SimulationParameters
-from layers_initialization import initialize_network_layers
-from netlist_generation.netlist_generation import netlist_builder
 from transconductance_calculations import calculate_transconductance
 import multiprocessing
 from mpl_toolkits.mplot3d import Axes3D  # Necessary for 3D plotting (in some versions)
@@ -47,7 +55,7 @@ class MyNetwork:
         # Unpack network details.
         self.freq = sim_params.freq
         self.simulation_type = sim_params.simulation_type
-        full_subfolder_path, self.new_sample_file, self.aex_file_path = input_files
+        full_subfolder_path, self.new_sample_file, self.result_file = input_files
 
 
 
@@ -56,12 +64,45 @@ class MyNetwork:
         
         self.batch_size = sim_params.batch_size
         self.scale_factor = sim_params.scale_factor
-        self.bias = sim_params.bias
+        self.bias = sim_params.bias #this is again the FSST?
+        self.diode_connected_flash_params = sim_params.diode_connected_flash_params
+        
+        
         
         self.all_nodes = all_nodes
         
-
-
+    def initialize_synapses(self, eldo_process, resistive_layers, simulation_type, debug):
+        full_voltage_range = self.diode_connected_flash_params["full_voltage_range"]
+        offset1layer = self.diode_connected_flash_params["offset1layer"]
+        offset2layer= self.diode_connected_flash_params["offset2layer"]
+        if simulation_type == "FSST":
+            for j, layer in enumerate(resistive_layers):
+                layer.update_synapse_dict(full_voltage_range, offset1layer, offset2layer)
+                set_synapses(eldo_process, layer.synapse_dict, debug)
+        if simulation_type == "TRAN":
+            for j, layer in enumerate(resistive_layers):
+                #so I need another dict, which will accumulate the deltaG updates and transform them into current pulses
+                layer.update_synapse_dict(full_voltage_range, offset1layer, offset2layer)
+                set_synapses(eldo_process, layer.synapse_dict, debug)  
+                
+    def update_synapses(self, eldo_process, resistive_layers, simulation_type, debug):
+        full_voltage_range = self.diode_connected_flash_params["full_voltage_range"]
+        offset1layer = self.diode_connected_flash_params["offset1layer"]
+        offset2layer= self.diode_connected_flash_params["offset2layer"]
+        if simulation_type == "FSST":
+            for j, layer in enumerate(resistive_layers):
+                layer.update_W(mode = None, clip = None)
+                layer.update_synapse_dict(full_voltage_range, offset1layer, offset2layer)
+                set_synapses(eldo_process, layer.synapse_dict, debug)
+        if simulation_type == "TRAN":
+            for j, layer in enumerate(resistive_layers):
+            #so I need another dict, which will accumulate the deltaG updates and transform them into current pulses
+                layer.update_W(mode = None, clip = None)
+                layer.update_synapse_dict(full_voltage_range, offset1layer, offset2layer)
+                layer.update_deltaI_dict()
+                set_synapses(eldo_process, layer.deltaI_dict, debug)  
+            
+            
     def set_inputs_and_run_simulation():
         
         
@@ -97,16 +138,16 @@ class MyNetwork:
         output_values = np.array(list(outputs.values()))
         output_list.append(output_values)
 
-    def free_nudged_train(self, eldo_process, X_train, Y_train, targets, epoch, optimizer = None, debug = False):
+    def free_nudged_train(self, eldo_process, X_train, Y_train, targets, epoch, optimizer, debug):
         
         
         layers = self.layers
         beta = self.beta
         batch_size = self.batch_size
         loss_fn = self.loss_fn
-        aex_result_file = self.aex_file_path
+        result_file = self.result_file
         simulation_type = self.simulation_type
-
+        
         
         n_of_node_voltages = len(self.all_nodes)
         
@@ -140,20 +181,35 @@ class MyNetwork:
         start_index = 4
         vol_extract_list = []
         simulation_time_list = []
-        voltage_dict_free = dict.fromkeys(self.all_nodes, None) #
-        voltage_dict_nudge = dict.fromkeys(self.all_nodes, None)
+        voltage_dict_free = dict.fromkeys(self.all_nodes[0], None) #
+        voltage_dict_nudge = dict.fromkeys(self.all_nodes[0], None)
         
         timings_list = []
         offset = 0
 
+        debug = True
+        
 
             #print(f"File size before clearing: {file_size} bytes")
         
+        #Write the initialized synapses
+        if epoch == 1:
+            command_nmos = "SET P(W_NONLIN_NMOS)=4u"
+            send_command_to_eldo(eldo_process, command_nmos, debug)
+            command_pmos = "SET P(W_NONLIN_PMOS)=4u"
+            send_command_to_eldo(eldo_process, command_pmos, debug)
+            command_non_lin = "SET P(VDD_PMOS_NONLIN)=2.4"
+            send_command_to_eldo(eldo_process, command_non_lin, debug)
+            self.initialize_synapses(eldo_process, resistive_layers, simulation_type, debug)
         
         for i in range(num_batches):
-            if os.path.exists(aex_result_file):
-                file_size = os.path.getsize(aex_result_file)
-                offset = file_size
+            # if os.path.exists(aex_result_file):
+            #     file_size = os.path.getsize(aex_result_file)
+            #     offset = file_size
+            if os.path.exists(result_file):
+                offset = os.path.getsize(result_file)
+            else:
+                offset = 0
             batch_start_time = time.time()
             start_idx = i * batch_size
             end_idx = min((i + 1) * batch_size, len(X_train))  # Ensure not to exceed the dataset length
@@ -174,31 +230,47 @@ class MyNetwork:
                     
                 beta_r = beta * np.random.uniform(-5,5)
                 #beta_r = beta
-                set_input_voltages(eldo_process, input_dict, debug)
-                #move at the end
                 disable_current_sources(eldo_process, inudge_dict, debug)
                 #time.sleep(0.01)
                 start_simulation = time.time()
-                run_eldo_simulation(eldo_process, debug)
+                
+                set_input_voltages(eldo_process, input_dict, debug)
+
+
+                ##### 
+                run_simulation_and_wait(eldo_process, simulation_type, q, debug)  
+                ###Here I need to set the PMOS CS TO OFF (after the first simulation)
+                command_pmos_cs = f"SET P(PMOS_CS_VDD_NEG)=0"
+                send_command_to_eldo(eldo_process, command_pmos_cs, debug)
+                
+
+                #for plotting there's a function read_update_and_plot
+                f0 = 1e6
+                t0 = 20e-6
+                voltage_dict_free =  read_update(eldo_process, result_file, voltage_dict_free, offset, simulation_type, f0, t0, n_of_node_voltages, debug)
+
                 
                 
+                #read_and_update(result_file, voltage_dict_free, offset, simulation_type, n_of_node_voltages)
+                #read_update_and_plot(eldo_process, result_file, voltage_dict_free, offset, simulation_type, n_of_node_voltages, debug)
                 end_index = start_index + n_of_node_voltages
 
                 #lines_of_interest = wait_for_eldos_completion(eldo_process, debug)
-                wait_for_eldos_completion_drain(eldo_process, q, debug)
+                
                 end_simulation = time.time() - start_simulation
                 simulation_time_list.append(end_simulation)
                 start_vol_extract = time.time()
-                #voltage_dict_free = parse_aex_file_no_end(aex_result_file, start_index, simulation_type, voltage_dict_free)
-                parse_aex_file_from_end_offset(aex_result_file, n_of_node_voltages, simulation_type, voltage_dict_free, offset)
-#                timings_list.append(timings)
+
+                      
                 vol_extract_time = time.time() - start_vol_extract
                 vol_extract_list.append(vol_extract_time)
 
-                
+                #this stays the same
                 for layer in resistive_layers:
                     layer.update__free_voltages(voltage_dict_free)
-                     
+
+                                    
+                
                 #print(f"Voltage extraction {volt_extract_end}")
                 outputs = layer.output_free_voltages #the outputs are just the outputs of the last layer
                 output_values = np.array(list(outputs.values()))
@@ -216,42 +288,26 @@ class MyNetwork:
                 
                 #now I can simply zip the currents to the parameters of the last layer and repeat
                 
-
-                
-                if mode == "current":
+                def calc_losses_set_currents(inudge_dict, outputs, target, beta_r, mode):
                     sample_losses, currents = loss_fn(outputs, target, beta_r, mode)
+                    inudge_keys_list = list(inudge_dict.keys())
                     for k, key in enumerate(inudge_keys_list):
                         inj_currents =  currents.flatten() 
                         inudge_dict[key] = inj_currents[k]    
                         
-                if mode == "voltage":
-                    sample_losses, target_voltages = loss_fn(outputs, target, beta_r, mode)#need to decide where to initialize this function - remember that loss_fn comes from the already initialized MSE
-                    target_voltages = - target_voltages.flatten() #FOR SOME REASON THE INPUTS ARE INVERTED
-                    voltage_index = 0
-                    for key in inudge_keys_list:
-                        if key.startswith("VNUDGE"):
-                            inudge_dict[key] = target_voltages[voltage_index]
-                            voltage_index += 1
-                        elif key.startswith("RNUDGE"):
-                            inudge_dict[key] = 0.01
-                                        
+                    set_currents_nudge_mode(eldo_process, inudge_dict, debug)
+                    return sample_losses
+                
+                sample_losses = calc_losses_set_currents(inudge_dict, outputs, target, beta_r, mode)
+                run_simulation_and_wait(eldo_process, simulation_type, q, debug)                                 
                 #output_layer.parameters = output_layer.update_parameters(flat_currents)
+
+                #wait_for_eldos_completion_drain(eldo_process, q, debug)
+
+                #mode = 'test' 
+                voltage_dict_nudge =  read_update(eldo_process, result_file, voltage_dict_free, offset, simulation_type, f0, t0, n_of_node_voltages, debug)
                 
-                set_currents_nudge_mode(eldo_process, inudge_dict, debug)
-                run_eldo_simulation(eldo_process, debug)
-                #lines_of_interest = wait_for_eldos_completion(eldo_process, debug)
-                #wait_for_eldos_completion_old(eldo_process, debug)
-                wait_for_eldos_completion_drain(eldo_process, q, debug)
-
-                mode = 'test' 
-
-                
-                parse_aex_file_from_end_offset(aex_result_file, n_of_node_voltages, simulation_type, voltage_dict_nudge, offset)
-
-
-
-
-
+                #parse_aex_file_from_end_offset(aex_result_file, n_of_node_voltages, simulation_type, voltage_dict_nudge, offset)
                 python_update_time = time.time
                 for layer in resistive_layers:
                     layer.update__nudge_voltages(voltage_dict_nudge)
@@ -260,11 +316,11 @@ class MyNetwork:
                 outputs_n = layer.output_nudge_voltages
                 outputs_n_values = list(outputs_n.values())#the outputs are just the outputs of the last layer
                 output_list_nudge.append(outputs_n_values)   
-#                sample_losses_n, voltages_n = loss_fn(outputs_n, target, beta_r, mode)
+                sample_losses_n, voltages_n = loss_fn(outputs_n, target, beta_r, mode)
                 
                 
                 for layer in resistive_layers:
-                    layer.run_update_process(batch_size, beta_r)
+                    layer.run_update_process(batch_size, beta_r) #this accumulates the gradients
                     
                     
 
@@ -273,14 +329,25 @@ class MyNetwork:
                 loss_list.append(sample_losses)
                 
                 
-              
-                
-              
+                                       
             #At the end of the batch update all resistances
-            for j, layer in enumerate(resistive_layers):
-                layer.update_W(mode = None, clip = None)
-                layer.update_synapse_dict()
-                set_resistances(eldo_process, layer.synapse_dict, debug)
+            #this also needs to be changed if I am writing with the current pulses
+
+                        
+                        
+            self.update_synapses(eldo_process, resistive_layers, simulation_type, debug)
+                        
+            #Here easier to differentiate between TRAN analysis or FSST analysis
+            # for j, layer in enumerate(resistive_layers):
+            #     if self.write_mode == "w_voltage_source":
+            #         layer.update_W(mode = None, clip = None)
+            #         layer.update_synapse_dict()
+            #         set_resistances(eldo_process, layer.synapse_dict, debug)
+            #     elif self.write_mode == "w_current_source":
+            #         #so I need another dict, which will accumulate the deltaG updates and transform them into current pulses
+            #         layer.update_W(mode = None, clip = None)
+            #         layer.update_deltaI_dict()
+            #         set_resistances(eldo_process, layer.synapse_dict, debug)
                 # ratios = compute_cosine_similarity(layer.deltaG, layer.W_old, layer.W)
                 # if j == 0:
                 #     ratios_list1.append(ratios)
@@ -296,15 +363,10 @@ class MyNetwork:
 
             
         
-        #plot_cosine_similarity(ratios_list1)
         ratio1_mean = np.array(np.mean(ratios_list1))
         ratio2_mean = np.array(np.mean(ratios_list2))
         ratio_list = [ratio1_mean, ratio2_mean]
-        #plot_cosine_similarity(ratios_list2)
-        #reset_chi_file(eldo_process, debug = False)
-        #reset_extract_file(eldo_process, debug = True)
-        #truncate__aex_file(aex_result_file, 10)
-        #clear_aex_file(aex_result_file)
+
         #loss_fn(output_list, mode='test')
         predictions = loss_fn(output_list, mode='test')
         epoch_acc = np.mean(loss_fn.verify_result(Y_train, np.array(predictions)))
@@ -319,8 +381,6 @@ class MyNetwork:
         output_nodes = [0, 1, 2, 3]
         plot_free_and_nudged(output_list, output_list_nudge, output_nodes, beta, epoch)
 
-        #clear_aex_file(aex_result_file)
-            #print("Successfully deleted aex file")
         
 
         diff1, diff2 =  output_plot(output_list)
@@ -368,12 +428,10 @@ class MyNetwork:
         binary_list = []
         prediction_list = []
         
-        #clear_aex_file(aex_result_file)
 
 
-        aex_result_file = self.aex_file_path
-        #clear_aex_file(aex_result_file)
-        #truncate__aex_file(aex_result_file, 10)
+        result_file = self.result_file
+
         counter = 0
         
         
@@ -383,8 +441,8 @@ class MyNetwork:
  
         
         
-        if os.path.exists(aex_result_file):
-            file_size = os.path.getsize(aex_result_file)
+        if os.path.exists(result_file):
+            file_size = os.path.getsize(result_file)
             offset = file_size
         print(f"File size before draw grid: {file_size} bytes")
         for X in X_in:
@@ -397,7 +455,7 @@ class MyNetwork:
             lines_of_interest = wait_for_eldos_completion(eldo_process, debug)
 
             #end_index = start_index + n_of_node_voltages
-            parse_aex_file_from_end_offset(aex_result_file, n_of_node_voltages, simulation_type, voltage_dict_free, offset)
+            parse_aex_file_from_end_offset(result_file, n_of_node_voltages, simulation_type, voltage_dict_free, offset)
 
 
             for layer in resistive_layers:
@@ -418,11 +476,6 @@ class MyNetwork:
             binary_prediction = self.loss_fn.binary_prediction(prediction)
             binary_list.extend(binary_prediction)
             
-            # if counter > 10:
-            #     truncate__aex_file(aex_result_file, 10)
-            #     counter = 0
-            #     start_index = 3
-            # counter += 1
             
         binary_array = np.array(binary_list).reshape(-1,1)
         
@@ -754,27 +807,27 @@ def train(sim_params, process_id = None): #probably objective function
     
     #Here I need to generate a new file name
     ########
-    
-    input_files = create_filenames(sim_params.output_dir, sim_params.sample_file, process_id)
-    full_subfolder_path, new_sample_file, aex_file_path = input_files
-    printfile = os.path.join(full_subfolder_path, "PRINTFILE.TXT")
+    simulation_type = sim_params.simulation_type
+    input_files = create_filenames(sim_params.output_dir, sim_params.sample_file, simulation_type, process_id)
+    full_subfolder_path, new_sample_file, result_file_path = input_files
+    #printfile = os.path.join(full_subfolder_path, "PRINTFILE.TXT")
 
 
     all_nodes = extract_all_nodes_voltages(layers)
-    builder.build_netlist(new_sample_file, transcon_calc, fet_identifiers, printfile)
+    builder.build_netlist(new_sample_file, transcon_calc, fet_identifiers, result_file_path)
 
     
     net = MyNetwork(layers, sim_params, input_files, all_nodes)
 
          
-    simulation = "digits_simulation"
+    simulation = "moons_simulation"
         # Load and center the dataset
     if simulation == "moons_simulation":
-        X_t, Y_t = prepare_moons_data(sim_params.num_samples, noise=0.1, random_state=41)
+        X_t, Y_t = ds.prepare_moons_data(sim_params.num_samples, noise=0.1, random_state=41)
     elif simulation == "digits_simulation":
-        X_t, Y_t = prepare_digits_data()
+        X_t, Y_t = ds.prepare_digits_data()
     elif simulation == "iris_simulation":
-        X_t, Y_t = prepare_iris_data()
+        X_t, Y_t = ds.prepare_iris_data()
         
         #X, Y = linear_regression(n_of_samples = 1200,a = float(1), b = float(7))
         
@@ -783,17 +836,19 @@ def train(sim_params, process_id = None): #probably objective function
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X_t) * sim_params.scale_factor
 
-    input_function = onehot_pos_neg_inputs_1bias_double_input
-    X, Y = onehot_pos_neg_inputs_1bias_double_input(X_scaled, Y_t, net.bias)
+    input_function = ds.onehot_pos_neg_inputs_1bias_double_input
+    X, Y = ds.onehot_pos_neg_inputs_1bias_double_input(X_scaled, Y_t, net.bias)
 
     X_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=0.2, shuffle=True)
 
 
 
-    debug = False
 
     #pids = get_eldo_pids(eldo_identifier = 'eldo_64.exe')
-    eldo_process, q = start_eldo_simulation_drain(new_sample_file, full_subfolder_path, m_thread = True, noascii =  True, debug = False)
+    m_thread = True
+    noascii =  True
+    debug = False
+    eldo_process, q = start_eldo_simulation_drain(new_sample_file, full_subfolder_path, m_thread, noascii, debug)
     setattr(net, 'q', q)
     #wait_for_eldos_completion_initialization(eldo_process, debug)
 
@@ -830,9 +885,11 @@ def train(sim_params, process_id = None): #probably objective function
     base_dir = sim_params.trained_models_dir#"/home/filip/simulations/trained_models"
             
     # Generate a subfolder name with the current date and time
-    date_time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-    full_subfolder_path = f"{simulation}_{date_time_str}_{process_id}"
-            
+    time_str = datetime.now().strftime("%H%M%S")
+    if process_id:
+        full_subfolder_path = f"{simulation}_{time_str}_{process_id}"
+    else:
+        full_subfolder_path = f"{simulation}_{time_str}"
     # Combine the base directory with the subfolder name
     output_dir_path = os.path.join(base_dir, full_subfolder_path)
     os.makedirs(output_dir_path, exist_ok=True)
@@ -852,7 +909,7 @@ def train(sim_params, process_id = None): #probably objective function
                 #set_input_voltages(eldo_process, bias_dict, debug = True)
                 #print(f"Starting epoch {epoch} for boundary {boundary}, batch size {batch_size} and scale factor {scale_factor}")
             if dynamic_outputs:
-                targets = net.calc_desired_outputs(eldo_process, X, Y, epoch= 0, debug = False)
+                targets = net.calc_desired_outputs(eldo_process, X, Y, epoch, debug)
 
             optimizer = None
             results = net.free_nudged_train(eldo_process, X_train, y_train, targets, epoch, optimizer, debug)
@@ -959,7 +1016,10 @@ def train(sim_params, process_id = None): #probably objective function
         remove_directory(full_subfolder_path)
         return accuracy_list
         
-    except:
+    except Exception as e:
+    # 1) Print the exception type, message, and full traceback
+        print(f"Caught error: {type(e).__name__}: {e}")
+        traceback.print_exc()       
         config_file_path = os.path.join(output_dir_path, "config") 
         save_sim_parameters(sim_params, config_file_path)
                 # Save the key metrics data for future use
@@ -974,14 +1034,16 @@ def train(sim_params, process_id = None): #probably objective function
         
     
 if __name__ == "__main__":
+    gamma_value =  [1e-8, 5e-9]
+
     gamma_values = [1e-8, 5e-9]
-    gamma_value = [1e-8, 5e-9]
-    batch_size = 32
+    batch_size = 2
     beta = 5e-5
     #scale_factor_list = [0.4, 0.5] 
     #bias_list = [0.2, 0.3, 0.4, 0.5, 0.6]
-    scale_factor_list = [0.4] 
-    scale_factor = 0.4
+    #good scale factor is 0.4
+    scale_factor_list = [0.3] 
+    scale_factor = 0.3
     bias_list = [0.2]    
     bias = 0.3
     sim_params = SimulationParameters(scale_factor, bias, batch_size, beta, gamma_value)

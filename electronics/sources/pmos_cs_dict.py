@@ -20,6 +20,10 @@ XM16 INOUTPUT_PMOS_CS NET4 NET2 NET2 EP5V0_BS3JU w=PMOS_CS_W l=2e-06
 *** End of subcircuit definition.
 """}
 
+
+
+
+
 self_biased_nmos_cs = {'PARAMS' : """
                        .PARAM NMOS_SELF_BIASED_CAP=5n
                        .PARAM NMOS_SELF_BIASED_CS_W_CS=3.5u

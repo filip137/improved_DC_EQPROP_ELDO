@@ -1,0 +1,130 @@
+bidir_amp_with_nonlin = {"PARAMS":
+"""
+.PARAM W_NONLIN_NMOS=2u
+.PARAM W_NONLIN_PMOS=8u
+.PARAM L_NONLIN_PMOS=1u
+.PARAM L_NONLIN_NMOS=1u
+.PARAM PMOS_CCCS_CASCADE_BIAS=2.5V
+.PARAM V_CASCODE_CCCS=2.5
+.PARAM W_CCCS_CASCODE_2=3.5u
+.PARAM W_CCCS_CASCODE_1=3.5u
+.PARAM L_CCCS_CASCODE_2=1.5u
+.PARAM L_CCCS_CASCODE_1=1u
+.PARAM WIDTH_NMOS_DIFF_A=650n
+.PARAM RES_DIFF_AMP=32K
+.PARAM R_SHUNT=1K
+.PARAM LENGTH_NMOS_DIFF_A=650n
+.PARAM CS1_RS=50K
+.PARAM CS1_RD=180k
+.PARAM CS2_RS=0
+.PARAM CS2_RD=48k
+.PARAM CS2_W=4u
+.PARAM CS2_L=2u
+.PARAM CS1_W=1.2u
+.PARAM CS1_L=1u
+.PARAM CD1_W=4u
+.PARAM CD1_L=650n
+.PARAM CAP_CCCS=800f
+.PARAM CAP_DIF_AMP=800f
+.PARAM CAP_END_VCVS=160p
+.PARAM CAP_NMOS_SELF_BIASED=3p
+.PARAM CAP_VCVS_INPUT=1.2e-12
+.PARAM VDD=3.3
+.PARAM VDD_NMOS_NONLIN=0
+.PARAM VDD_PMOS_NONLIN=2.2
+.PARAM RS_CD=5k
+.PARAM R_VCVS_BIAS2=1MEG
+.PARAM R_VCVS_BIAS1=1MEG
+.PARAM R_D_DIFF_AMP=65K
+.PARAM R_CCCS_BIAS2=1MEG
+.PARAM R_CCCS_BIAS1=1MEG
+.PARAM IBIAS_DIFF_A=90u""",
+
+
+"SUBCIRCUIT" : """
+*** Library name: amplifiers
+*** Cell name: vcvs_ss
+*** View name: schematic
+.SUBCKT VCVS_SS INPUT_VCVS OUTPUT_CS_2 OUTPUT_VCVS
+    R5 VDD OUTPUT_CS_2 CS2_RD
+    R3 VDD OUTPUT_CS_1 CS1_RD
+    R19 NET7 0 CS2_RS
+    R2 OUTPUT_VCVS 0 RS_CD
+    R4 NET8 0 CS1_RS
+XM13 VDD OUTPUT_CS_2 OUTPUT_VCVS OUTPUT_VCVS EN5V0_BS3JU w=CD1_W l=CD1_L
++nfing=1 ncrsd=1 number=1 srcefirst=1 ngcon=1 mismatch=1 po2act=-1
++dvt_mdev=0 dmu_mdev=0 soa=1 lpe=0
+XM12 OUTPUT_CS_2 OUTPUT_CS_1 NET7 NET7 EN5V0_BS3JU w=CS2_W l=CS2_L nfing=1
++ncrsd=1 number=1 srcefirst=1 ngcon=1 mismatch=1 po2act=-1 dvt_mdev=0
++dmu_mdev=0 soa=1 lpe=0
+XM11 OUTPUT_CS_1 INPUT_VCVS NET8 NET8 EN5V0_BS3JU w=CS1_W l=CS1_L nfing=1
++ncrsd=1 number=1 srcefirst=1 ngcon=1 mismatch=1 po2act=-1 dvt_mdev=0
++dmu_mdev=0 soa=1 lpe=0
+    V0 VDD 0 DC VDD
+.ENDS
+*** End of subcircuit definition.
+
+*** Library name: amplifiers
+*** Cell name: cccs_ss
+*** View name: schematic
+.SUBCKT CCCS_SS OUTPUT_CURRENT_CCCS INPUT_CCS_1 INPUT_CCS_2
+XM1 NET11 INPUT_DIFFERENTIAL2 NET023 NET11 EN5V0_BS3JU w=WIDTH_NMOS_DIFF_A
++l=LENGTH_NMOS_DIFF_A nfing=1 ncrsd=1 number=1 srcefirst=1 ngcon=1
++mismatch=1 po2act=-1 dvt_mdev=0 dmu_mdev=0 soa=1 lpe=0
+XM0 OUTPUT_DIFFERENTIAL_AMP INPUT_DIFFERENTIAL1 NET11 NET11 EN5V0_BS3JU
++w=WIDTH_NMOS_DIFF_A l=LENGTH_NMOS_DIFF_A nfing=1 ncrsd=1 number=1
++srcefirst=1 ngcon=1 mismatch=1 po2act=-1 dvt_mdev=0 dmu_mdev=0 soa=1
++lpe=0
+XM9 OUTPUT_CURRENT_CCCS NET28 NET27 NET27 EN5V0_BS3JU w=W_CCCS_CASCODE_2
++l=L_CCCS_CASCODE_2 nfing=1 ncrsd=1 number=1 srcefirst=1 ngcon=1
++mismatch=1 po2act=-1 dvt_mdev=0 dmu_mdev=0 soa=1 lpe=0
+XM8 NET27 INPUT_CASCADE 0 0 EN5V0_BS3JU w=W_CCCS_CASCODE_1
++l=L_CCCS_CASCODE_1 nfing=1 ncrsd=1 number=1 srcefirst=1 ngcon=1
++mismatch=1 po2act=-1 dvt_mdev=0 dmu_mdev=0 soa=1 lpe=0
+XM10 INPUT_CASCADE OUTPUT_DIFFERENTIAL_AMP 0 0 EN5V0_BS3JU w=8e-07 l=2e-06
++nfing=1 ncrsd=1 number=1 srcefirst=1 ngcon=1 mismatch=1 po2act=-1
++dvt_mdev=0 dmu_mdev=0 soa=1 lpe=0
+    R0 INPUT_CCS_1 INPUT_CCS_2 R_SHUNT
+    R3 VDD OUTPUT_DIFFERENTIAL_AMP RES_DIFF_AMP
+    R4 VDD NET023 RES_DIFF_AMP
+    R9 VDD INPUT_DIFFERENTIAL1 R_CCCS_BIAS1
+    R11 VDD INPUT_DIFFERENTIAL2 R_CCCS_BIAS1
+    R12 INPUT_DIFFERENTIAL2 0 R_CCCS_BIAS2
+    R10 INPUT_DIFFERENTIAL1 0 R_CCCS_BIAS2
+    R23 VDD INPUT_CASCADE R_D_DIFF_AMP
+    I2 NET11 0 DC IBIAS_DIFF_A
+    V4 NET024 0 DC PMOS_CCCS_CASCADE_BIAS
+    V0 VDD 0 DC VDD
+    V3 NET28 0 DC V_CASCODE_CCCS
+    C0 INPUT_CCS_1 INPUT_DIFFERENTIAL1 CAP_DIF_AMP
+    C1 INPUT_DIFFERENTIAL2 INPUT_CCS_2 CAP_DIF_AMP
+XM2 OUTPUT_CURRENT_CCCS NET024 VDD VDD EP5V0_BS3JU w=6e-06 l=1e-06 nfing=1
++ncrsd=1 number=1 srcefirst=1 ngcon=1 mismatch=1 po2act=-1 dvt_mdev=0
++dmu_mdev=0 soa=1 lpe=0
+.ENDS
+*** End of subcircuit definition.
+
+*** Library name: amplifiers
+*** Cell name: amplification_ss_with_non_linearity
+*** View name: schematic
+.SUBCKT AMPLIFICATION_SS AMP_INPUT AMP_OUTPUT
+XM0 AMP_INPUT NET08 VDD_NMOS_NONLIN VDD_NMOS_NONLIN EN5V0_BS3JU
++w=W_NONLIN_NMOS l=L_NONLIN_NMOS nfing=1 ncrsd=1 number=1 srcefirst=1
++ngcon=1 mismatch=1 po2act=-1 dvt_mdev=0 dmu_mdev=0 soa=1 lpe=0
+    C3 AMP_INPUT NET05 CAP_VCVS_INPUT
+    C0 AMP_INPUT NET17 CAP_CCCS
+    XI1 NET05 NET09 NET08 VCVS_SS
+    XI2 NET17 NET08 AMP_OUTPUT CCCS_SS
+XM1 AMP_INPUT NET09 VDD_PMOS_NONLIN VDD_PMOS_NONLIN EP5V0_BS3JU
++w=W_NONLIN_PMOS l=L_NONLIN_PMOS nfing=1 ncrsd=1 number=1 srcefirst=1
++ngcon=1 mismatch=1 po2act=-1 dvt_mdev=0 dmu_mdev=0 soa=1 lpe=0
+    V2 VDD 0 DC VDD
+    V1 VDD_NMOS_NONLIN 0 DC VDD_NMOS_NONLIN
+    V0 VDD_PMOS_NONLIN 0 DC VDD_PMOS_NONLIN
+    R0 NET05 0 R_VCVS_BIAS2
+    R1 VDD NET05 R_VCVS_BIAS1
+.ENDS
+*** End of subcircuit definition.
+"""
+    
+}

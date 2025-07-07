@@ -39,9 +39,9 @@ class MSE:
             output_nodes_voltages = output_node_voltages_values.reshape(-1, 2)
             prediction = output_nodes_voltages[:, 0] - output_nodes_voltages[:, 1] # array of predictions
             
-        elif num_output_nodes == 3:
-            output_nodes_voltages = output_node_voltages_values
-            prediction = output_node_voltages_values
+        # elif num_output_nodes == 3:
+        #     output_nodes_voltages = output_node_voltages_values
+        #     prediction = output_node_voltages_values
         
         if mode == 'current':
             losses = np.zeros(shape=(int(num_output_nodes/2), ))

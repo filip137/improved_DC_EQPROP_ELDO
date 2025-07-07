@@ -1,0 +1,1 @@
+ogr_bcg gidl_gisl -update -nocheck -gccopt -B -P adit

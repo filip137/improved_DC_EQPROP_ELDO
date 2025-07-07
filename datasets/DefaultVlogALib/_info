@@ -1,0 +1,27 @@
+m255
+K4
+z2
+13
+!s112 1.1
+!i10d 8192
+!i10e 25
+!i10f 100
+cModel Technology
+Z0 d/home/filip/simulations/improved_simulation_functions/datasets
+:gidl_gisl
+!s20a 1
+!s209 5
+!s208 k3B3cg21id32iBF2Y>92Y7
+Vk3B3cg21id32iBF2Y>92Y7
+!s207 28
+!s206 1751636178
+w1446716509
+!s205  +ogr  -k 2005 
+!s204 1
+!s203 4676
+!s202 224
+ngidl_gisl
+F/cao/DK/ST/HCMOS9A_10.9/PDK_STM_hcmos9lp_HV_M4_5V0/10.9-10/DATA/MODELS/ELDO/CORNERS/gidl_gisl.va
+R0
+!s201 8
+!s8d adms

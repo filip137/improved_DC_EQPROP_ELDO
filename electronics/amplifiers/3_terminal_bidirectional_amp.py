@@ -1,3 +1,6 @@
+#11.6 i THINK THIS IS THE much older version
+
+
 new_bidir_dict = {"PARAMS" : """
 .PARAM V_CASCODE_CCCS=2.5
 .PARAM PMOS_CCCS_CASCADE_BIAS=1.7
