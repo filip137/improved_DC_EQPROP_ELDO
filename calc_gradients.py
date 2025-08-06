@@ -38,149 +38,94 @@ from matplotlib import cm  # For colormap support
 
 #what I need for the current calculation
 
-def parse_aex_file_from_end_current_version(filename, n_of_variables, simulation_type, voltage_dict1, current_dict1, seek_position = None):
 
-    voltage_dict = voltage_dict1.copy()
-    # Part 1: Read the entire file into a list of lines.
-    start_read = time.perf_counter()
-    with open(filename, 'r') as file:
-        file.seek(seek_position)
-        lines = file.readlines()
-    end_read = time.perf_counter()
 
-    
-    # Part 2: Collect the last n_of_node_voltages non-blank lines by iterating backwards.
-    selected_lines = []
-    count = 0
-    for line in reversed(lines):
-        if line.strip() == "":
-            break
-        selected_lines.append(line)
-        count += 1
-        if count >= n_of_variables:
-            break
-    
-    # Part 3: Process the selected lines.
-    updated_keys = set()
-    for line in reversed(selected_lines):
-        stripped_line = line.strip()
+class SimulationParameters_test:
+    def __init__(self, scale_factor, bias, batch_size, beta, gamma_values, mode):
         
-        if simulation_type == "DC":
-            if stripped_line.startswith("*V("):
-                parts = stripped_line.split()
-                # Extract node name and value.
-                node_name = parts[0][3:-1].strip("'\"")
-                node_value = float(parts[2])
-                if node_name in voltage_dict_free:
-                    voltage_dict_free[node_name] = node_value
-                    updated_keys.add(node_name)
-        elif simulation_type == "AC":
-            if stripped_line.startswith("*VR("):
-                parts = stripped_line.split()
-                node_name = parts[0][4:-1].strip("'\"")
-                node_value = float(parts[2])
-                if node_name in voltage_dict_free:
-                    voltage_dict_free[node_name] = node_value
-                    updated_keys.add(node_name)
-        elif simulation_type == "FSST":
-            if stripped_line.startswith("*YVAL("):
-                parts = stripped_line.split()
-                signal_str = parts[0]
-                # Check if the signal is an ISUB measurement or a V measurement.
-                if "ISUB(" in signal_str and current_dict1 is not None:
-                    start_idx = signal_str.find("ISUB(") + len("ISUB(")
-                    end_idx = signal_str.find(")", start_idx)
-                    node_name_current = signal_str[start_idx:end_idx]
-                    node_value_curr = float(parts[-1])
-                    current_dict1[node_name_current] = node_value_curr
+        date_str = datetime.now().strftime("%m%d")
+        hour_str = datetime.now().strftime("%H%M%S")
 
-                elif "V(" in signal_str:
-                    start_idx = signal_str.find("V(") + 2  # position after 'V('
-                    end_idx = signal_str.find(")", start_idx)
-                    node_name_vol = signal_str[start_idx:end_idx].split(',')[0]
-                    node_value_vol = float(parts[-1])
-                    voltage_dict[node_name_vol] = node_value_vol
-                    updated_keys.add(node_value_vol)
-                else:
-                    continue  # if the line does not match expected formats, skip it
-
-                # # Extract the node value; using the last token (this takes the value after the comma).
-                # if node_name_vol in voltage_dict_free:
-                #     voltage_dict_free[node_name] = node_value_vol
-                #     updated_keys.add(node_name)
-                # if node_name_current in current_dict:
-                #     current_dict[node_name_current] = node_value_curr
-                
-    
-    # Return the timings list.
-    return voltage_dict, current_dict1
-
-def send_quit_command_to_eldo(process, debug):
-    """Sends a command to the Eldo subprocess, ensuring it's still open."""
-    command = "QUIT"
-    if process.poll() is None:  # None means the process is still running
-        if debug: print(f"Sending command: {command}")
-        try:
-            process.stdin.write(command + "\n")
-            process.stdin.flush()
-            print("Eldo process terminated.")
-        except Exception as e:
-            print(f"Error sending command: {e}")
-    else:
-        print("Cannot send command, subprocess has terminated.")
-
-
-
-class SimulationParameters:
-    def __init__(self, scale_factor, bias, batch_size, beta, gamma_values):
         # Network initialization parameters
-        self.simulation_type = "FSST"  # FSST OR DC
+        self.simulation_type = "DC"  # FSST OR DC OR TRAN
         self.network_size = [5, 12, 4]  # [input, hidden, output]
         self.freq = "1MEG"
-        self.neuron = "amp_ss"  # amp_ss or perfect_amp
-        self.amplifier = "ThreeTerminalBiDirAmp" # NewBiDirAmp or OldBiDirAmp or ThreeTerminalBiDirAmp
+        self.neuron = "perfect_amp"  # amp_ss or perfect_amp
+        self.amplifier = "BiDirWithNonLin" # "BiDirWithNonLin" or "BiDirWithOutNonLin" or OldBiDirAmp or ThreeTerminalBiDirAmp
         if self.amplifier == "ThreeTerminalBiDirAmp":
             self.non_lin = True
         else:
             self.non_lin = False
+                
         
-        self.vdc_bias1 = 2.4  # Ensure this matches the netlist
-        self.pmos_nonlin_bias = 2.3
-        self.synapse = "fet" # fet or resistor
+        self.cs_bias = False #"perfect_curr_source" or "self_biased" or False
+        if self.cs_bias == "perfect_curr_source": 
+            self.layer1_bias_curr = 3.5 * 25 * 1e-6 #When I am using large networks that are difficult to bias with the nmos sources I am using DC sources with this bias current
+            self.layer2_bias_curr = 3.5 * 60 * 1e-6 #The idea is that for each synapse that is connected to the neuron they should provide 10e-6 Amps
+        
+ 
+        self.synapse = "resistor" # fet or resistor
         #[1e-6, 2e-7]
         self.gamma_values = gamma_values
-        self.cs_bias = True
         # Simulation hyper parameters
 
         self.beta = beta
         self.batch_size = batch_size
         self.nudging_mode = "current"
         self.loss_function = "MSE"
-        self.bounds = {"min_conductance" : 1e-7,
+        self.bounds = {"min_conductance" : 0.1e-5,
                        "max_conductance" : 7e-5}
 
-        # Output files
-        self.sample_file = "/home/filip/simulations/aex_files/13_4"
-        self.output_dir = "/home/filip/simulations/aex_files/13_4"
-        self.trained_models_dir = "/home/filip/simulations/trained_models/fet_with_nonlin_vary_beta"
+        
+        
+        self.initializer = {
+            "initializer": {
+                "init_type": "random_uniform",
+                "params": {
+                    "L": 1.1e-5,
+                    "U": 5.1e-5
+                },
+                "seed" : 40
+                }}
+        
+        
+        
+        #this i suppose needs to be adjusted
+        if self.simulation_type == "FSST":
+            self.diode_connected_flash_params = {
+                       "offset1layer" : -0.3,
+                       "offset2layer" : -0.3,
+                       "gain" : [1/7.5e-5, 1/7.5e-5]} #actually the inverse of deltagm/deltavgs
+            
+        elif self.simulation_type == "TRAN":
+            self.diode_connected_flash_params = {
+                       "offset1layer" : -0.7,
+                       "offset2layer" : -0.48,
+                       "gain" : [1/3.5e-5, 1/3.4e-5]} #gain layer1 and gainlayer2
+            
+        
+        # base directories
+        base_aex = "/home/filip/simulations/aex_files"
+        if mode == "TRAIN":
+            base_models = "/home/filip/simulations/trained_models"
+        elif mode == "TESTING":
+            base_models = "/home/filip/simulations/testing_plots"
+
+        # Output files & folders with today?s date
+        self.sample_file = f"{self.synapse}_{self.simulation_type}_netlist"
+        self.output_dir         = os.path.join(base_aex, date_str)
+        self.trained_models_dir = os.path.join(
+            base_models,
+            f"{self.synapse}_{self.simulation_type}_{date_str}"
+        )
         # Dataset parameters
         self.dataset = "moons"
         self.n_of_epochs = 40
         self.scale_factor = scale_factor
         self.noise = 0.1
         self.bias = bias
-        self.num_samples = 2400
+        self.num_samples = 1600
 
-        
-        self.initializer = {
-            "initializer": {
-                "init_type": "random_uniform",
-                "params": {
-                    "L": 7e-5,
-                    "U": 1e-7
-                },
-                "seed" : 41
-                }}
 
         
 
@@ -201,14 +146,54 @@ class SimulationParameters:
         }
 
         #the additional network parameters needed to be defined when generating the netlist
-        self.network_parameters_for_netlist= {
-            "VDC_BIAS1" : self.vdc_bias1,
-            "PMOS_NONLIN_BIAS" : self.pmos_nonlin_bias,
-            "FORM" : 0,
-            "LOW_NOISE_OPTION" : 0
-        }
+        #This is passed to the netlist builder, which creates lines. PARAM VDC_BIAS1 = 2.3 etc
+        #However, the circuit lines are still defined in the layer_class, so it is important that there parameters match the names that are defined in the layer_class. Say 
+        #voltage_linne = f"VSOURCE_PMOS{i+1} {source} 0 DC PMOS_NONLIN_BIAS\n" - adds a line but the names must be PMOS_NONLIN_BIAS
+        
+        self.start_read_time = 10e-6 #the pulse starts at start_read time then it reaches the max value after the 1u and it stays there
+        self.end_read_time = 30e-6
+        self.input_read_volt = 3.3 #until end_read_time
+        self.output_read_volt = 1.9 #this is the pulse applied to the gate of the PMOS at the output
+        self.simulation_time = 50e-6
+        self.start_write_time = 1e-6 #for writing instead, the pulse is traingular 2ns long
+        self.end_write_time  = 3e-6 #this is currently inactive 
+        self.start_discharge_time = 32e-6
+        self.end_discharge_time = 33e-6
+        self.syres = 100e12
+        self.sycap = 10e-15
+        self.rise_time = 1e-6
 
-
+        self.transient_params_for_netlist = {
+                "sycap": self.sycap,
+                "syres" : self.syres,
+                "input_read_volt" : self.input_read_volt,
+                "output_read_volt" : self.output_read_volt,
+                "start_read_time" : self.start_read_time,
+                "end_read_time" : self.end_read_time,
+                "start_write_time" : self.start_write_time,
+                "end_write_time" : self.end_write_time,    
+                "START_DISCHARGE_TIME" : self.start_discharge_time,
+                "END_DISCHARGE_TIME" : self.end_discharge_time,
+                "RISE_TIME" : self.rise_time,
+                "layer1_bias_curr" : getattr(self, "layer1_bias_curr", 0),
+                "layer2_bias_curr" : getattr(self, "layer2_bias_curr", 0),
+                "FORM" : 0,
+                "LOW_NOISE_OPTION" : 0
+                }
+        
+        
+        self.vdc_bias1 = 2.1 #essentially the input reading voltage for the FSST
+        self.pmos_cs_v_bias  = 1.9 #essentially the output reading voltage for the FSST
+        
+        
+        
+        self.fsst_params_for_netlist = {"VDC_BIAS1" : self.vdc_bias1,
+                    "PMOS_CS_V_BIAS" : getattr(self, "pmos_cs_v_bias", 0),
+                    "layer1_bias_curr" : getattr(self, "layer1_bias_curr", 0),
+                    "layer2_bias_curr" : getattr(self, "layer2_bias_curr", 0),
+                    "FORM" : 0,
+                    "LOW_NOISE_OPTION" : 0}
+        
 
 def main():
 

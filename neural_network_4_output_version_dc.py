@@ -73,19 +73,17 @@ class MyNetwork:
         
             
             
-    def set_inputs_and_run_simulation():
+    def set_inputs_and_run_simulation(input_dict, eldo_process, simulation_type, q, debug):
         
         
         set_input_voltages(eldo_process, input_dict, debug = False)
                 #move at the end
-        disable_current_sources(eldo_process, inudge_dict, debug = False)
+        #disable_current_sources(eldo_process, inudge_dict, debug = False)
                 #time.sleep(0.01)
         start_simulation = time.time()
-        run_eldo_simulation(eldo_process, debug)
+        run_simulation_and_wait(eldo_process, simulation_type, q, debug=debug)
                 
-                
-        end_index = start_index + n_of_node_voltages
-                
+                                
                 
                 
                 #lines_of_interest = wait_for_eldos_completion(eldo_process, debug)
@@ -215,23 +213,18 @@ class MyNetwork:
                 
 
                 #for plotting there's a function read_update_and_plot
-                f0 = 1e6
-                t0 = 20e-6
-                #voltage_dict_free = read_update(eldo_process, result_file, voltage_dict_free, offset, simulation_type, f0, t0, n_of_node_voltages, debug)
-                voltage_dict_free = read_update_and_plot(eldo_process, result_file, voltage_dict_free, offset, simulation_type, n_of_node_voltages, debug)
-                
-                
-                #read_and_update(result_file, voltage_dict_free, offset, simulation_type, n_of_node_voltages)
-                #read_update_and_plot(eldo_process, result_file, voltage_dict_free, offset, simulation_type, n_of_node_voltages, debug)
-                end_index = start_index + n_of_node_voltages
 
-                #lines_of_interest = wait_for_eldos_completion(eldo_process, debug)
-                
-                end_simulation = time.time() - start_simulation
-                simulation_time_list.append(end_simulation)
-                start_vol_extract = time.time()
+                results = read_update(
+                    eldo_process,
+                    result_file,
+                    voltage_dict_free,
+                    offset,
+                    simulation_type,
+                    transcon_calc=True,
+                    debug=debug
+                    )
 
-                      
+            
                 vol_extract_time = time.time() - start_vol_extract
                 vol_extract_list.append(vol_extract_time)
 

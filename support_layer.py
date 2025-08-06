@@ -13,6 +13,7 @@ import json
 import shutil
 import random
 import pandas as pd
+import traceback
 from io import StringIO
 import matplotlib.pyplot as plt
 
@@ -106,21 +107,6 @@ def open_and_read_txt_file(filename, seek_position):
     )
     return df_last, col_names
 
-def save_sim_parameters(sim_params, file_path):
-    """
-    Save the simulation parameters to a JSON file.
-
-    Args:
-        sim_params (SimulationParameters): An instance of SimulationParameters.
-        file_path (str): The file path where the JSON data will be saved.
-    """
-    try:
-        with open(file_path, 'w') as file:
-            json.dump(sim_params.__dict__, file, indent=4)
-        print(f"Simulation parameters successfully saved to {file_path}")
-    except Exception as e:
-        print(f"An error occurred while saving simulation parameters: {e}")
-
 
 def compute_cosine_similarity(deltaG, W_before, W_after):
     """
@@ -163,7 +149,7 @@ def create_filenames(output_dir, sample_file, simulation_type, process_id = None
     subfolder_name = generate_filename("my_experiment", extension = None)
     full_subfolder_path = os.path.join(output_dir, subfolder_name)
     if process_id is not None:
-        full_subfolder_path = full_subfolder_path + str(process_id)
+        full_subfolder_path = full_subfolder_path + "_" + str(process_id)
         
     os.makedirs(full_subfolder_path, exist_ok=True)
     
@@ -172,10 +158,10 @@ def create_filenames(output_dir, sample_file, simulation_type, process_id = None
     base_sample_name, _ = os.path.splitext(base_sample_file)
     
     # Step 3: Generate filenames
-    cir_filename = generate_filename(base_sample_name, extension=".cir")
-    cir_filename = "netlist.cir"
+    base_netlist_name = "netlist"
+    cir_filename = base_netlist_name + ".cir"
     if simulation_type == "FSST" or simulation_type == "DC":
-        result_file = generate_filename(base_sample_name, extension=".aex")
+        result_file = base_netlist_name + ".aex"
     elif simulation_type == "TRAN":
         result_file = generate_filename(base_sample_name, extension=".TXT")
     
@@ -264,6 +250,43 @@ def parse_aex_file(filename, start_index, end_index, simulation_type = "AC"):
 
 
     return parsed_data
+
+
+def plot_two_dc_sources(dc1, dc2,
+                        label1='Source 1', label2='Source 2',
+                        x=None,
+                        x_label='Index',
+                        y_label='DC value',
+                        title=None,
+                        unit=1e-5):
+    """
+    Plot dc1 and dc2 (array-like) on the same axes, scaling values by `unit`
+    so that the y-axis is in multiples of that unit (e.g., 1e-5).
+    """
+    dc1 = np.asarray(dc1, dtype=float)
+    dc2 = np.asarray(dc2, dtype=float)
+    if x is None:
+        x = np.arange(len(dc1))
+    else:
+        x = np.asarray(x)
+    if len(x) != len(dc1) or len(dc1) != len(dc2):
+        raise ValueError("dc1, dc2 and x must all have the same length")
+
+    # scale data
+    scaled_dc1 = dc1 / unit
+    scaled_dc2 = dc2 / unit
+
+    plt.figure()
+    plt.plot(x, scaled_dc1, marker='o', label=label1)
+    plt.plot(x, scaled_dc2, marker='s', linestyle='--', label=label2)
+    plt.xlabel(x_label)
+    plt.ylabel(f"{y_label} (×{unit:.0e} A)")
+    if title:
+        plt.title(title)
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
 
 
 def delete_file_with_chi_extension(sample_file):
@@ -356,68 +379,7 @@ def parse_aex_file_no_end(filename, start_index, simulation_type, voltage_dict_f
     return voltage_dict_free
 
 
-def parse_aex_file_from_end(filename, n_of_node_voltages, simulation_type, voltage_dict_free):
-    # Keep track of which keys have been updated
-    updated_keys = set()
 
-    # Read the entire file into a list of lines.
-    with open(filename, 'r') as file:
-        lines = file.readlines()
-        
-    # Collect the last n_of_node_voltages non-blank lines by iterating backwards.
-    selected_lines = []
-    count = 0
-    for line in reversed(lines):
-        # If we hit a blank line, stop processing (like the original function).
-        if line.strip() == "":
-            break
-        selected_lines.append(line)
-        count += 1
-        if count >= n_of_node_voltages:
-            break
-
-    # Reverse the list so that the lines are processed in the order they appear in the file.
-    for line in reversed(selected_lines):
-        stripped_line = line.strip()
-
-        if simulation_type == "DC":
-            if stripped_line.startswith("*V("):
-                parts = stripped_line.split()
-                # Extract node name and value
-                node_name = parts[0][3:-1].strip("'\"")
-                node_value = float(parts[2])
-                if node_name in voltage_dict_free:
-                    voltage_dict_free[node_name] = node_value
-                    updated_keys.add(node_name)
-
-        elif simulation_type == "AC":
-            if stripped_line.startswith("*VR("):
-                parts = stripped_line.split()
-                node_name = parts[0][4:-1].strip("'\"")
-                node_value = float(parts[2])
-                if node_name in voltage_dict_free:
-                    voltage_dict_free[node_name] = node_value
-                    updated_keys.add(node_name)
-
-        elif simulation_type == "FSST":
-            if stripped_line.startswith("*YVAL("):
-                parts = stripped_line.split()
-                # Example: "*YVAL(V(V_OUT_0_1),10MEG)"
-                signal_str = parts[0]
-                start_idx = signal_str.find('V(') + 2  # position after 'V('
-                end_idx = signal_str.find(')', start_idx)
-                node_name = signal_str[start_idx:end_idx].split(',')[0]
-                node_value = float(parts[-1])
-                if node_name in voltage_dict_free:
-                    voltage_dict_free[node_name] = node_value
-                    updated_keys.add(node_name)
-
-    # After processing, ensure that all keys in voltage_dict_free were updated.
-    missing_keys = set(voltage_dict_free.keys()) - updated_keys
-    if missing_keys:
-        raise ValueError(f"Not all keys were updated. Missing keys: {missing_keys}")
-
-    return voltage_dict_free
 
 def parse_aex_file_from_end_timed(filename, n_of_node_voltages, simulation_type, voltage_dict_free, seek_position = None):
     timings = []  # List to store timings for each part.
@@ -501,69 +463,130 @@ def parse_aex_file_from_end_timed(filename, n_of_node_voltages, simulation_type,
     return timings
 
 
-def parse_aex_file_from_end_offset(filename, n_of_node_voltages, simulation_type, voltage_dict_free, seek_position = None):
-
+def parse_aex_file_from_end_offset(
+    filename,
+    simulation_type,
+    voltage_dict_free,
+    transcon_calc: bool = False,
+    seek_position=None
+):
     
-    # Part 1: Seek 
-    with open(filename, 'r') as file:
-        file.seek(seek_position)
-        lines = file.readlines()
+    # Part 1: read from seek_position
+    with open(filename, 'r') as f:
+        f.seek(seek_position or 0)
+        lines = f.readlines()
 
-    
-    # Part 2: Collect the last n_of_node_voltages non-blank lines by iterating backwards.
-    #here maybe I can just wait for the lines to break and not actually count the node voltages!
+    # Part 2: grab everything from the end up to the TEMPERATURE line
     selected_lines = []
-    count = 0
     for line in reversed(lines):
-        if line.strip() == "":
+        if line.lstrip().startswith("TEMPERATURE ="):
             break
         selected_lines.append(line)
-        count += 1
-        if count >= n_of_node_voltages:
-            break
 
-    
-    # Part 3: Process the selected lines.
+    # Prepare optional dict for ISUB currents
+    current_dict = {} if transcon_calc else None
+    dc_current_dict = {} if transcon_calc else None
+    dc_dict = {} if transcon_calc else None
+
+    # Part 3: parse selected_lines
     updated_keys = set()
     for line in reversed(selected_lines):
-        stripped_line = line.strip()
-        
-        if simulation_type == "DC":
-            if stripped_line.startswith("*V("):
-                parts = stripped_line.split()
-                # Extract node name and value.
-                node_name = parts[0][3:-1].strip("'\"")
-                node_value = float(parts[2])
-                if node_name in voltage_dict_free:
-                    voltage_dict_free[node_name] = node_value
-                    updated_keys.add(node_name)
-        elif simulation_type == "AC":
-            if stripped_line.startswith("*VR("):
-                parts = stripped_line.split()
-                node_name = parts[0][4:-1].strip("'\"")
-                node_value = float(parts[2])
-                if node_name in voltage_dict_free:
-                    voltage_dict_free[node_name] = node_value
-                    updated_keys.add(node_name)
-        elif simulation_type == "FSST":
-            if stripped_line.startswith("*YVAL("):
-                parts = stripped_line.split()
-                signal_str = parts[0]
-                start_idx = signal_str.find('V(') + 2  # position after 'V('
-                end_idx = signal_str.find(')', start_idx)
-                node_name = signal_str[start_idx:end_idx].split(',')[0]
-                node_value = float(parts[-1])
-                if node_name in voltage_dict_free:
-                    voltage_dict_free[node_name] = node_value
-                    updated_keys.add(node_name)
-    end_process = time.perf_counter()
+        stripped = line.strip()
+        node = None
+        val  = None
 
-    
-    # Part 4: Check for missing keys.
-    start_check = time.perf_counter()
-    missing_keys = set(voltage_dict_free.keys()) - updated_keys
-    if missing_keys:
-        raise ValueError(f"Not all keys were updated. Missing keys: {missing_keys}")
+        if simulation_type == "DC" and stripped.startswith("*V("):
+            parts = stripped.split()
+            node  = parts[0][3:-1]
+            val   = float(parts[2])
+
+        elif simulation_type == "AC" and stripped.startswith("*VR("):
+            parts = stripped.split()
+            node  = parts[0][4:-1]
+            val   = float(parts[2])
+
+        elif simulation_type == "FSST" and stripped.startswith("*YVAL("):
+            parts = stripped.split()
+            sig   = parts[0]
+            si    = sig.find("V(") + 2
+            ei    = sig.find(")", si)
+            node  = sig[si:ei].split(",")[0]
+            val   = float(parts[-1])
+
+        # update voltage_dict_free if matched
+        if node and node in voltage_dict_free:
+            voltage_dict_free[node] = val
+            updated_keys.add(node)
+
+        if transcon_calc and stripped.startswith("*YVAL(ISUB("):
+            # split off the right?hand side of the ?=? 
+            lhs, rhs = stripped.split("=", 1)
+        
+            # extract the node name between ISUB( ... )
+            start = lhs.find("ISUB(") + len("ISUB(")
+            end   = lhs.find(")", start)
+            cur_node = lhs[start:end]
+        
+            # split the RHS at commas, strip whitespace, ignore empty strings
+            vals = [v.strip() for v in rhs.split(",") if v.strip()]
+        
+            # vals[0] is the left number, vals[1] is the right number
+            cur_val = float(vals[1])
+        
+            current_dict[cur_node] = cur_val
+            
+        if transcon_calc and stripped.startswith("*ISUB("):
+            # split off the right?hand side of the ?=? 
+            lhs, rhs = stripped.split("=", 1)
+        
+            # extract the node name between ISUB( ... )
+            start = lhs.find("ISUB(") + len("ISUB(")
+            end   = lhs.find(")", start)
+            cur_node = lhs[start:end]
+        
+            # split the RHS at commas, strip whitespace, ignore empty strings
+            vals = [v.strip() for v in rhs.split(",") if v.strip()]
+        
+            # vals[0] is the left number, vals[1] is the right number
+            dc_cur_val = float(vals[0])
+        
+            dc_current_dict[cur_node] = dc_cur_val           
+            
+        if transcon_calc and stripped.startswith("*V("):
+            # split off the right?hand side of the ?=? 
+            lhs, rhs = stripped.split("=", 1)
+        
+            # extract the node name between ISUB( ... )
+            start = lhs.find("V(") + len("V(")
+            end   = lhs.find(")", start)
+            vol_node = lhs[start:end]
+        
+            # split the RHS at commas, strip whitespace, ignore empty strings
+            vals = [v.strip() for v in rhs.split(",") if v.strip()]
+        
+            # vals[0] is the left number, vals[1] is the right number
+            dc_val = float(vals[0])
+        
+            dc_dict[vol_node] = dc_val
+            
+    # Part 4: sanity check for voltages only
+    missing = set(voltage_dict_free) - updated_keys
+    if missing:
+        raise ValueError(f"Missing updates for: {missing!r}")
+
+    # Return one or two dicts depending on transcon_calc
+    result_dict = {
+    "voltages": voltage_dict_free,
+    "currents": current_dict,
+    "dc_voltages": dc_dict,
+    "dc_currents": dc_current_dict}
+    return result_dict
+
+
+
+
+
+
 
 def make_param_dict(orig_dict, prefix="V_END_"):
     """
@@ -623,54 +646,29 @@ def plot_specified_columns(df_last, columns_to_plot, time_col=None):
 
 
 
-def compute_fourier_coefficients2(
-    df, f0, t0,
-    n_harmonics=1,
-    n_periods=4,
-    voltage_cols=None,
-    plot_current_yes=False
-):
+def compute_fourier_coefficients2(df, f0, t0, n_harmonics=1, n_periods=4,
+                                  voltage_cols=None, transcon_calc: bool = False):
     """
     For each VG_* and V_* column, return the last voltage sample as DC,
     and compute AC magnitudes via Goertzel-like correlation.
-    If a column name starts with 'ISUB', call plot_current(time, values).
-
-    Parameters
-    ----------
-    df : pandas.DataFrame
-        Contains a 'time' column and voltage/current columns.
-    f0 : float
-        Fundamental frequency in Hz.
-    t0 : float
-        Start time for analysis window.
-    n_harmonics : int
-        Number of harmonics (1..n_harmonics) to compute.
-    n_periods : int
-        Number of fundamental cycles to include.
-    voltage_cols : list of str, optional
-        Specific columns to process; defaults to all non-time columns.
-    plot_current : callable, optional
-        Function to call for 'ISUB*' columns: plot_current(time_array, value_array).
+    If transcon_calc=True, also collect ISUB* columns into isub_dict.
+    If a column name starts with 'ISUB', skip Fourier and optionally call plot_current(time, values).
 
     Returns
     -------
-    dc_gate : dict
-        Last-sample voltages for VG_* columns.
-    ac_gate : dict
-        AC magnitude (first harmonic) for VG_* columns.
-    dc_ds : dict
-        Last-sample voltages for V_* columns.
-    ac_ds : dict
-        AC magnitude (first harmonic) for V_* columns.
-    used_columns : list
-        List of columns analyzed (excluding ISUB columns).
+    results : dict
+        Contains keys:
+          dc_gate_end, dc_gate, ac_gate,
+          dc_ds_end, dc_ds, ac_ds,
+          used_columns,
+          ac_isub, dc_isub  (only if transcon_calc=True; keys are stripped of the ISUB(...) wrapper)
     """
     # find time column
     time_col = next((c for c in df.columns if c.lower() == 'time'), None)
     if time_col is None:
         raise KeyError("DataFrame must have a 'time' column.")
 
-    # select voltage columns
+    # select voltage/current columns
     if voltage_cols is None:
         voltage_cols = [c for c in df.columns if c != time_col]
     else:
@@ -685,51 +683,84 @@ def compute_fourier_coefficients2(
     dt = np.median(np.diff(t_full))
     fs = 1.0 / dt
 
-    # analysis window length
+    # analysis window length (integer # of cycles)
     T = 1.0 / f0
     N_cycle = int(round(T * fs))
     N = n_periods * N_cycle
     i0 = 0 if t0 <= t_full[0] else np.searchsorted(t_full, t0)
 
+    dc_gate_end = {}
     dc_gate = {}
     ac_gate = {}
-    dc_ds   = {}
-    ac_ds   = {}
+    dc_ds_end = {}
+    dc_ds = {}
+    ac_ds = {}
     used_columns = []
 
-    for col in voltage_cols:
-        # handle ISUB columns by plotting and skipping Fourier
+    # prepare AC and DC current dicts if requested
+    ac_isub = {} if transcon_calc else None
+    dc_isub = {} if transcon_calc else None
 
+    for col in voltage_cols:
         used_columns.append(col)
         v = df[col].values
+
+        # ensure we have enough samples
         if i0 + N > v.size:
             raise ValueError(f"Not enough samples in column {col}.")
 
         seg = v[i0:i0 + N]
         t_seg = t_full[i0:i0 + N]
 
-        # DC = last sample
-        last_val = np.round(v[-1], 3)
-
-        # AC via Goertzel-like for k=1 (first harmonic)
+        # compute AC magnitude (Goertzel-like)
         expo = np.exp(-2j * np.pi * f0 * t_seg)
         C1 = np.dot(seg, expo) / N
+        amp1 = 2 * C1.imag
 
+        if col.startswith("ISUB"):
+            # strip wrapper ISUB(...) to get inner node name
+            if col.startswith("ISUB(") and col.endswith(")"):
+                key = col[len("ISUB("):-1]
+            else:
+                key = col  # fallback if unexpected format
 
-        C1_imag = -C1.imag
-        amp1 = 2 * C1_imag
+            if transcon_calc:
+                ac_isub[key] = amp1
+                dc_val = np.round(np.mean(seg), 6)
+                dc_isub[key] = dc_val
+            continue  # skip the voltage handling
 
-        # Assign into gate or drain-source dicts
+        # DC = last sample (for voltages only)
+        last_val = np.round(v[-1], 3)
+
+        # assign voltages into gate/drain-source dicts
         if col.startswith('V('):
             vol_name = col[2:-1]
             if vol_name.startswith('VG'):
-                dc_gate[vol_name] = last_val
+                dc_gate_end[vol_name] = last_val
+                mid_val = np.round(np.mean(seg), 6)
+                dc_gate[vol_name] = mid_val
                 ac_gate[vol_name] = amp1
             elif vol_name.startswith('V_'):
-                dc_ds[vol_name] = last_val
+                dc_ds_end[vol_name] = last_val
+                mid_val = np.round(np.mean(seg), 6)
+                dc_ds[vol_name] = mid_val
                 ac_ds[vol_name] = amp1
 
-    return dc_gate, ac_gate, dc_ds, ac_ds, used_columns
+    results = {
+        "dc_gate_end": dc_gate_end,
+        "dc_gate": dc_gate,
+        "ac_gate": ac_gate,
+        "dc_ds_end": dc_ds_end,
+        "dc_ds": dc_ds,
+        "ac_ds": ac_ds,
+        "used_columns": used_columns,
+        "ac_isub": ac_isub,
+        "dc_isub": dc_isub,
+    }
+    return results
+
+
 
 
 
@@ -817,54 +848,7 @@ def compute_fourier_components_ac(
     
     return gate, ds
 
-def parse_aex_file_no_end_old(filename, start_index, simulation_type):
-    # Dictionary to store extracted data
-    parsed_data = {}
 
-    # Open the file and process line by line
-    current_index = 0
-    with open(filename, 'r') as file:
-        for line in file:
-            current_index += 1
-
-            # Skip lines until we reach the starting index
-            if current_index < start_index:
-                continue
-
-            stripped_line = line.strip()
-
-            # Break out of the loop if a blank line is encountered
-            if stripped_line == "":
-                break
-
-            # Process the line based on the simulation type
-            if simulation_type == "DC":
-                if stripped_line.startswith("*V("):
-                    parts = stripped_line.split()
-                    # Extract node name and value
-                    node_name = parts[0][3:-1].strip("'\"")
-                    node_value = float(parts[2])
-                    parsed_data[node_name] = node_value
-
-            elif simulation_type == "AC":
-                if stripped_line.startswith("*VR("):
-                    parts = stripped_line.split()
-                    node_name = parts[0][4:-1].strip("'\"")
-                    node_value = float(parts[2])
-                    parsed_data[node_name] = node_value
-
-            elif simulation_type == "FSST":
-                if stripped_line.startswith("*YVAL("):
-                    parts = stripped_line.split()
-                    # Example: "*YVAL(V(V_OUT_0_1),10MEG)"
-                    signal_str = parts[0]
-                    start_idx = signal_str.find('V(') + 2  # position after 'V('
-                    end_idx = signal_str.find(')', start_idx)
-                    node_name = signal_str[start_idx:end_idx].split(',')[0]
-                    node_value = float(parts[-1])
-                    parsed_data[node_name] = node_value
-
-    return parsed_data
 
 def update_input_dict(input_dict, X):
     """
@@ -1095,113 +1079,166 @@ def run_simulation_and_wait(eldo_process, simulation_type, q, debug, sim_time = 
                    
     elif simulation_type == "TRAN":
         run_trans_and_DC(eldo_process, sim_time, q, debug)
-                        
+     
+    elif simulation_type == "DC":
+        run_eldo_simulation(eldo_process, debug)
+        wait_for_eldos_completion_drain(eldo_process, q, debug)                   
 
 
-def read_update_and_plot(eldo_process, result_file, voltage_dict_free, offset, simulation_type, n_of_node_voltages, debug):
-    if simulation_type == "FSST":
-        voltage_dict_free = parse_aex_file_from_end_offset(
-            result_file,
-            n_of_node_voltages,
-            simulation_type,
-            voltage_dict_free,
-            offset
-        )
+def plot_tran_voltages(
+    eldo_process,
+    result_file,
+    offset,
+    simulation_type,
+    debug,
+    columns_to_plot=None  # <-- new parameter
+):
+    """
+    Reads simulation results, updates voltage_dict_free, and optionally plots.
 
-    elif simulation_type == "TRAN":
-        # Need to define f0 - frequency and t0 - the start of the AC reading
+    Parameters
+    ----------
+    eldo_process
+    result_file : str
+    voltage_dict_free : dict
+    offset : int
+    simulation_type : {'FSST', 'TRAN'}
+    n_of_node_voltages : int
+    debug : bool
+    columns_to_plot : list of str or None
+        If provided and simulation_type=='TRAN', only these columns are plotted.
+    """
+
+    if simulation_type == "TRAN":
+        # read last transient sweep
         df_last, col_names = open_and_read_txt_file(result_file, offset)
+
+        # set AC-analysis params
         f0 = 1e6
         t0 = 15e-6
 
-        # Compute Fourier coefficients for gate and drain-source currents
-        dc_gate, ac_gate, dc_ds, ac_ds, used_columns = compute_fourier_coefficients2(
+        # compute Fourier coefficients
+        results = compute_fourier_coefficients2(
             df_last,
             f0,
             t0,
             n_harmonics=1,
             n_periods=4
         )
+        dc_gate, ac_gate, dc_ds, ac_ds, used_columns = (
+            results["dc_gate_end"],
+            results["ac_gate"],
+            results["dc_ds_end"],
+            results["ac_ds"],
+            results["used_columns"]
+        )
 
-        # Plot specified columns
-        columns_to_plot = [
-            "V(VG_0_1_2)",
-            "V(VG_1_1_1)",
-            "V(V_OUT_0_1)",
-            "V(V_OUT_1_1)",
-            "V(V_IN_1_1)"
-        ]
-        plot_specified_columns(df_last, columns_to_plot, time_col=None)
-
-        columns_to_plot2 = [
-            "V(XI011.XI1.OUTPUT_CS_1)",
-            "V(XI011.XI1.OUTPUT_CS_2)",
-            "V(XI011.NET05)"
-        ]
-        plot_specified_columns(df_last, columns_to_plot2, time_col=None)
-
-        # Update voltage_dict_free with AC drain-source coefficients
-        for node, coeffs in ac_ds.items():
-            if node in voltage_dict_free:
-                voltage_dict_free[node] = coeffs
-
-        # Prepare DC parameters for setting in Eldo
-        dc_gate = {f"W_{node[3:]}": round(val, 3) for node, val in dc_gate.items()}
-        dc_ds_param_dict = make_param_dict(dc_ds, prefix="V_END_")
-
-        for key, value in dc_gate.items():
-            command = f"SET P({key})={value}"
-            send_command_to_eldo(eldo_process, command, debug)
-
-        for key, value in dc_ds_param_dict.items():
-            command = f"SET P({key})={value}"
-            send_command_to_eldo(eldo_process, command, debug)
-
-    return voltage_dict_free
+        # plot only if user provided a list
+        if columns_to_plot:
+            plot_specified_columns(
+                df_last,
+                columns_to_plot,
+                time_col=None
+            )
 
 
 
-def read_update(eldo_process, result_file, voltage_dict_free, offset, simulation_type, f0, t0, n_of_node_voltages, debug):
+
+
+def read_update(eldo_process, result_file, voltage_dict_free, offset, simulation_type, transcon_calc, debug, *, f0=None, t0=None):
+    """
+    If transcon_calc=True, also compute DC/AC for ISUB* currents and
+    return them alongside voltage_dict_free.
+
+    Parameters
+    ----------
+    eldo_process
+    result_file
+    voltage_dict_free
+    offset
+    simulation_type : "FSST" or "TRAN"
+    debug : bool
+    f0 : float, optional   # required for TRAN
+    t0 : float, optional   # required for TRAN
+    transcon_calc : bool, optional
+    """
+    current_dict = None
+    dc_voltage_dict = None
     if simulation_type == "FSST":
-        voltage_dict_free = parse_aex_file_from_end_offset(
-            result_file,
-            n_of_node_voltages,
-            simulation_type,
-            voltage_dict_free,
-            offset
-        )
-
+        transcon_calc = True
+        result_dict_output = parse_aex_file_from_end_offset(
+                result_file, simulation_type, voltage_dict_free,
+                transcon_calc, seek_position=offset)
     elif simulation_type == "TRAN":
-        # Need to define f0 - frequency and t0 - the start of the AC reading
-        df_last, col_names = open_and_read_txt_file(result_file, offset)
+        if f0 is None or t0 is None:
+            raise ValueError("TRAN requires f0 and t0 as keyword args")
 
-        # Compute Fourier coefficients for gate and drain-source currents
-        dc_gate, ac_gate, dc_ds, ac_ds, used_columns = compute_fourier_coefficients2(
-            df_last,
-            f0,
-            t0,
-            n_harmonics=1,
-            n_periods=4
+        df_last, _ = open_and_read_txt_file(result_file, offset)
+        res = compute_fourier_coefficients2(
+            df_last, f0, t0,
+            n_harmonics=1, n_periods=4,
+            transcon_calc=transcon_calc
         )
-
-        # Update voltage_dict_free with AC drain-source coefficients
-        for node, coeffs in ac_ds.items():
+        # build result_dict
+        result_dict = {
+            'dc_gate_end':     res['dc_gate_end'],
+            'dc_gate':     res['dc_gate'],
+            'ac_gate':     res['ac_gate'],
+            'dc_ds_end':       res['dc_ds_end'],
+            'dc_ds':       res['dc_ds'],
+            'ac_ds':       res['ac_ds'],
+            'used_columns':res['used_columns'],
+            'voltages':    voltage_dict_free,
+            'ac_isub':   (res.get('ac_isub') or {}),
+            'dc_isub':   (res.get('dc_isub') or {})
+        }
+        # update voltage_dict_free with AC drain-source
+        for node, coeff in res['ac_ds'].items():
             if node in voltage_dict_free:
-                voltage_dict_free[node] = coeffs
+                voltage_dict_free[node] = coeff
+        # send DC SET commands
+        #THIS IS NOW DONE BY A SEPARATE FUNCTION
+        # for node, val in res['dc_gate_end'].items():
+        #     key = f"W_{node[3:]}"
+        #     send_command_to_eldo(eldo_process, f"SET P({key})={round(val,3)}", debug)
+        # ds_params = make_param_dict(res['dc_ds_end'], prefix="V_END_")
+        # for key, val in ds_params.items():
+        #     send_command_to_eldo(eldo_process, f"SET P({key})={val}", debug)
+            
+            
+            # build and return a clean output dict
+        result_dict_output = {
+        'dc_ds': result_dict['dc_ds'],
+        'dc_ds_end':       res['dc_ds_end'],
+        'dc_gate_end': result_dict['dc_gate_end'],
+        'ac_voltages':        voltage_dict_free,
+        'ac_currents':     result_dict['ac_isub'],
+        'dc_currents':     result_dict['dc_isub']}
+        
+    elif simulation_type == "DC":
+        transcon_calc = False
+        result_dict_output = parse_aex_file_from_end_offset(
+                result_file, simulation_type, voltage_dict_free,
+                transcon_calc, seek_position=offset)
+        
+        
+    else:
+        raise ValueError(f"Unknown simulation_type: {simulation_type!r}")
+        
+        
 
-        # Prepare DC parameters for setting in Eldo
-        dc_gate = {f"W_{node[3:]}": round(val, 3) for node, val in dc_gate.items()}
-        dc_ds_param_dict = make_param_dict(dc_ds, prefix="V_END_")
+        
+    return result_dict_output
 
-        for key, value in dc_gate.items():
-            command = f"SET P({key})={value}"
-            send_command_to_eldo(eldo_process, command, debug)
 
-        for key, value in dc_ds_param_dict.items():
-            command = f"SET P({key})={value}"
-            send_command_to_eldo(eldo_process, command, debug)
+def set_the_ic_voltages(eldo_process, dc_gate_end_dict, dc_ds_voltage_dict,debug):
+    for node, val in dc_gate_end_dict.items():
+        key = f"W_{node[3:]}"
+        send_command_to_eldo(eldo_process, f"SET P({key})={round(val,3)}", debug)
+    ds_params = make_param_dict(dc_ds_voltage_dict, prefix="V_END_")
+    for key, val in ds_params.items():
+        send_command_to_eldo(eldo_process, f"SET P({key})={val}", debug)
 
-    return voltage_dict_free
 
 
 
@@ -1256,6 +1293,7 @@ def set_eldo_simulation(process, mode, input_values, resistor_value_dict,  inudg
 
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
+        traceback.print_exc()
 
     
 def wait_for_eldos_completion(process, debug):
@@ -1406,11 +1444,77 @@ def extract_voltages(process, node_voltages, debug):
  
 def set_synapses(process, synapse_dict, debug):
     """Sets resistance values for the simulation."""
-    for res_key, res_value in synapse_dict.items():
-        eldo_command = f"SET P ({res_key}) = {res_value}"
+    for syn_key, syn_value in synapse_dict.items():
+        eldo_command = f"SET P ({syn_key}) = {syn_value}"
         send_command_to_eldo(process, eldo_command, debug)
     
- 
+
+    
+
+
+def initialize_synapses(eldo_process, resistive_layers, diode_connected_flash_params, simulation_type, debug):
+    #If the simulation is FSST the synapse dict will contain the gate_voltages, which will be set in the beginning of the simulation
+    #If the simulation is TRAN the synapse dict will also contain gate voltages, which will be used as an initial condition at the start of the simulation
+    if diode_connected_flash_params:
+        offset1layer = diode_connected_flash_params['offset1layer']
+        offset2layer = diode_connected_flash_params['offset2layer']
+        gain = diode_connected_flash_params['gain']
+    if simulation_type == "FSST":
+        for j, layer in enumerate(resistive_layers):
+            layer.update_synapse_dict(diode_connected_flash_params)
+            set_synapses(eldo_process, layer.synapse_dict, debug)
+    if simulation_type == "TRAN":
+        for j, layer in enumerate(resistive_layers):
+                #so I need another dict, which will accumulate the deltaG updates and transform them into current pulses
+            layer.update_synapse_dict(diode_connected_flash_params)
+            set_synapses(eldo_process, layer.synapse_dict, debug)  
+    elif simulation_type == "DC":
+        for j, layer in enumerate(resistive_layers):
+                #so I need another dict, which will accumulate the deltaG updates and transform them into current pulses
+            layer.update_synapse_dict(diode_connected_flash_params)
+            set_synapses(eldo_process, layer.synapse_dict, debug)  
+
+
+
+def update_synapses(eldo_process, resistive_layers, diode_connected_flash_params, simulation_type, debug):
+    """
+    W - contains the transconductances
+    deltaG - contains the changes in the transconductances (gradients)
+    synapse_dict - contains the gate voltages 
+    
+    
+    
+    FSST: update W -> G -> push synapse_dict
+    TRAN: update W -> G -> I -> push deltaI_dict
+    """
+    #If the simulation is FSST, I calculate the new synapse dict, which contains the new gate voltages to be applied
+    #If the simulation is TRAN I also calculate the new gate voltages to be applied, but then I still need to calculate how much charge (or current) I need to supply to the
+    #   gate to get these voltages
+    
+    offset1layer = diode_connected_flash_params['offset1layer']
+    offset2layer = diode_connected_flash_params['offset2layer']
+    gain = diode_connected_flash_params['gain']
+    
+    
+    
+    
+    for layer in resistive_layers:
+        layer.update_W(mode=None, clip=None)
+        layer.update_synapse_dict(diode_connected_flash_params)
+
+        if simulation_type == "TRAN":
+            layer.update_deltaI_dict()
+            payload = layer.synapse_dict
+        elif simulation_type == "FSST":
+            payload = layer.synapse_dict
+
+        set_synapses(eldo_process, payload, debug)
+
+
+
+
+
+
 def set_input_voltages(process, input_values, debug):
     """Sets simulation parameters in 'free' mode."""
     for vol_source, vol in input_values.items():
@@ -1463,14 +1567,14 @@ def reset_chi_file(process, debug):
         send_command_to_eldo(process, "RESET FILES", debug)
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
-        
+        traceback.print_exc()
 def reset_extract_file(process, debug):
     """Runs the Eldo simulation."""
     try:
         send_command_to_eldo(process, "RESET EXTRACT", debug)
     except Exception as e:
         print(f"An unexpected error occurred: {e}") 
-        
+        traceback.print_exc()
         
 def run_eldo_simulation(process, debug):
     """Runs the Eldo simulation."""
@@ -1478,7 +1582,7 @@ def run_eldo_simulation(process, debug):
         send_command_to_eldo(process, "RUN", debug)
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
-        
+        traceback.print_exc()
         
         
 def run_trans_and_DC(process, sim_time, q, debug):
@@ -1494,12 +1598,10 @@ def run_trans_and_DC(process, sim_time, q, debug):
         run_eldo_simulation(process, debug)
         wait_for_eldos_completion_drain(process, q, debug)
 
-        #end_time = time.time()
-        #elapsed = end_time - start_time
-        #print(f"First simulation (TRANS) completed in {elapsed:.2f} seconds.")
 
     except Exception as e:
         print(f"An unexpected error occurred during the first simulation: {e}")
+        traceback.print_exc()
     
     # --- Second Simulation (DC) ---
     dc_line = f".TRAN 0.1u 0.1u"
@@ -1511,13 +1613,11 @@ def run_trans_and_DC(process, sim_time, q, debug):
         run_eldo_simulation(process, debug)
         wait_for_eldos_completion_drain(process, q, debug)
 
-        # end_time = time.time()
-        # elapsed = end_time - start_time
-        # print(f"Second simulation (DC) completed in {elapsed:.2f} seconds.")
+
 
     except Exception as e:
         print(f"An unexpected error occurred during the second simulation: {e}")
-    
+        traceback.print_exc()
     
     
     

@@ -182,6 +182,18 @@ def onehot_pos_neg_inputs_1bias(X, Y, scale_factor, bias, output_scale=1):
     
     return X_in, Y_one_hot
 
+def pos_neg_inputs_1bias(X, Y, scale_factor, bias, output_scale=1):
+    # Scale positive and negative inputs
+    X_pos = X * scale_factor
+    X_neg = -X * scale_factor
+    X_bias_pos = bias * np.ones((X_pos.shape[0], 1))
+    
+    # Combine inputs
+    X_in = np.hstack((X_pos, X_neg, X_bias_pos))
+
+    
+    return X_in
+
 
 def onehot_pos_neg_inputs_1bias_double_input(X, Y, bias, output_scale=1):
     # Scale positive and negative inputs

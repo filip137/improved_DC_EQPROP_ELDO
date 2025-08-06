@@ -3,7 +3,6 @@ pmos_cs = {'PARAMS' :
 
 .PARAM PMOS_CS_W=6u
 .PARAM PMOS_CS_VDD=3.3
-.PARAM PMOS_CS_V_BIAS=1.5
 """
 ,
 'SUBCIRCUIT':"""
@@ -20,6 +19,7 @@ XM16 INOUTPUT_PMOS_CS NET4 NET2 NET2 EP5V0_BS3JU w=PMOS_CS_W l=1e-06
 *** End of subcircuit definition.
 """}
 
+#.PARAM PMOS_CS_V_BIAS=2
 
 ##corrected version 3.6
 self_biased_nmos_cs = {'PARAMS' : """
@@ -70,7 +70,7 @@ improved_pmos_cs = {'PARAMS' :
 'SUBCIRCUIT':
     """.SUBCKT PMOS_CS GROUND INOUTPUT_PMOS_CS
     V21 NET2 NET07 DC PMOS_CS_VDD
-XM16 INOUTPUT_PMOS_CS NET4 NET2 NET2 EP5V0_BS3JU w=PMOS_CS_W l=2e-06
+XM16 INOUTPUT_PMOS_CS NET4 NET2 NET2 EP5V0_BS3JU w=PMOS_CS_W l=1e-06
 +nfing=1 ncrsd=1 number=1 srcefirst=1 ngcon=1 mismatch=1 po2act=-1
 +dvt_mdev=0 dmu_mdev=0 soa=1 lpe=0
     V18 NET07 GROUND PWL ( 0 PMOS_CS_VDD_NEG 1u 0 )

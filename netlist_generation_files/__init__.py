@@ -10,6 +10,7 @@ from .layer_class           import BaseLayer, InputLayer, DenseLayer, NonLinearL
 from .netlist_generation    import netlist_builder
 from .layers_initialization import initialize_network_layers
 from .simulation_parameters import SimulationParameters
+from .simulation_parameters_test import SimulationParameters_test
 from .layers_initialization import initialize_network_layers
 
 # 2) Define __all__ so "from netlist_generation import *" only pulls these

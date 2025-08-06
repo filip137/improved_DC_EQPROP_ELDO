@@ -1,22 +1,19 @@
 from datetime import datetime
 import os
 
-class SimulationParameters:
-    def __init__(self, scale_factor, bias, batch_size, beta, gamma_values):
-        
-        
-        mode = "VALIDATION"
-        
+class SimulationParameters_test:
+    def __init__(self, scale_factor, bias, batch_size, beta, gamma_values, mode):
         
         date_str = datetime.now().strftime("%m%d")
         hour_str = datetime.now().strftime("%H%M%S")
 
         # Network initialization parameters
-        self.simulation_type = "FSST"  # FSST OR DC OR TRAN
-        self.network_size = [9, 12, 6]  # [input, hidden, output]
+        self.simulation_type = "TRAN"  # FSST OR DC OR TRAN
+        self.network_size = [5, 12, 4]  # [input, hidden, output]
         self.freq = "1MEG"
-        self.neuron = "amp_ss"  # amp_ss or perfect_amp
-        self.amplifier = "BiDirWithNonLin" # "BiDirWithNonLin" or "BiDirWithOutNonLin" or OldBiDirAmp or ThreeTerminalBiDirAmp
+        self.neuron = "perfect_amp"  # amp_ss or perfect_amp
+        self.amplifier = "PerfectAmpWithNonlin" # "BiDirWithNonLin" or "BiDirWithOutNonLin" or OldBiDirAmp or ThreeTerminalBiDirAmp
+                            # "PerfectAmpWithNonlin"
         if self.amplifier == "ThreeTerminalBiDirAmp":
             self.non_lin = True
         else:
@@ -27,10 +24,10 @@ class SimulationParameters:
         
         
         
-        self.cs_bias = "perfect_curr_source" #"perfect_curr_source" or "self_biased" or False
+        self.cs_bias = False #"perfect_curr_source" or "self_biased" or False
         if self.cs_bias == "perfect_curr_source": 
-            self.layer1_bias_curr = 9 * 5 * 1e-6 #When I am using large networks that are difficult to bias with the nmos sources I am using DC sources with this bias current
-            self.layer2_bias_curr = 12* 5 * 1e-6 #The idea is that for each synapse that is connected to the neuron they should provide 10e-6 Amps
+            self.layer1_bias_curr = 4 * 25 * 1e-6 #When I am using large networks that are difficult to bias with the nmos sources I am using DC sources with this bias current
+            self.layer2_bias_curr = 4 * 60 * 1e-6 #The idea is that for each synapse that is connected to the neuron they should provide 10e-6 Amps
         
  
         self.synapse = "fet" # fet or resistor
@@ -51,10 +48,10 @@ class SimulationParameters:
             "initializer": {
                 "init_type": "random_uniform",
                 "params": {
-                    "L": 1.1e-5,
+                    "L": 0.1e-5,
                     "U": 5.1e-5
                 },
-                "seed" : 40
+                "seed" : 41
                 }}
         
         
@@ -77,10 +74,8 @@ class SimulationParameters:
         base_aex = "/home/filip/simulations/aex_files"
         if mode == "TRAIN":
             base_models = "/home/filip/simulations/trained_models"
-        if mode == "TRAIN":
-            base_models = "/home/filip/simulations/trained_models"
-        elif mode == "VALIDATION":
-            base_models = "/home/filip/simulations/validation_plots"
+        elif mode == "TESTING":
+            base_models = "/home/filip/simulations/testing_plots"
 
         # Output files & folders with today?s date
         self.sample_file = f"{self.synapse}_{self.simulation_type}_netlist"
@@ -90,8 +85,8 @@ class SimulationParameters:
             f"{self.synapse}_{self.simulation_type}_{date_str}"
         )
         # Dataset parameters
-        self.dataset = "iris"
-        self.n_of_epochs = 100
+        self.dataset = "moons"
+        self.n_of_epochs = 40
         self.scale_factor = scale_factor
         self.noise = 0.1
         self.bias = bias
@@ -146,6 +141,8 @@ class SimulationParameters:
                 "START_DISCHARGE_TIME" : self.start_discharge_time,
                 "END_DISCHARGE_TIME" : self.end_discharge_time,
                 "RISE_TIME" : self.rise_time,
+                "layer1_bias_curr" : getattr(self, "layer1_bias_curr", 0),
+                "layer2_bias_curr" : getattr(self, "layer2_bias_curr", 0),
                 "FORM" : 0,
                 "LOW_NOISE_OPTION" : 0
                 }

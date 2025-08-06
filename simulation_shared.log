@@ -1,0 +1,103 @@
+2025-08-01 17:11:06,170 [PID 231278] INFO main: Starting parameter search with 1 jobs
+2025-08-01 17:11:07,878 [PID 231278] ERROR main: Future for <netlist_generation_files.simulation_parameters.SimulationParameters object at 0x7f959c6b9400> raised unexpectedly: Queue objects should only be shared between processes through inheritance
+concurrent.futures.process._RemoteTraceback: 
+"""
+Traceback (most recent call last):
+  File "/home/filip/miniconda3/envs/mycondaenv/lib/python3.8/multiprocessing/queues.py", line 239, in _feed
+    obj = _ForkingPickler.dumps(obj)
+  File "/home/filip/miniconda3/envs/mycondaenv/lib/python3.8/multiprocessing/reduction.py", line 51, in dumps
+    cls(buf, protocol).dump(obj)
+  File "/home/filip/miniconda3/envs/mycondaenv/lib/python3.8/multiprocessing/queues.py", line 58, in __getstate__
+    context.assert_spawning(self)
+  File "/home/filip/miniconda3/envs/mycondaenv/lib/python3.8/multiprocessing/context.py", line 359, in assert_spawning
+    raise RuntimeError(
+RuntimeError: Queue objects should only be shared between processes through inheritance
+"""
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/filip/simulations/improved_simulation_functions/multi_threading_modern_logging.py", line 112, in main
+    sim_ret, result, err = future.result()
+  File "/home/filip/miniconda3/envs/mycondaenv/lib/python3.8/concurrent/futures/_base.py", line 437, in result
+    return self.__get_result()
+  File "/home/filip/miniconda3/envs/mycondaenv/lib/python3.8/concurrent/futures/_base.py", line 389, in __get_result
+    raise self._exception
+  File "/home/filip/miniconda3/envs/mycondaenv/lib/python3.8/multiprocessing/queues.py", line 239, in _feed
+    obj = _ForkingPickler.dumps(obj)
+  File "/home/filip/miniconda3/envs/mycondaenv/lib/python3.8/multiprocessing/reduction.py", line 51, in dumps
+    cls(buf, protocol).dump(obj)
+  File "/home/filip/miniconda3/envs/mycondaenv/lib/python3.8/multiprocessing/queues.py", line 58, in __getstate__
+    context.assert_spawning(self)
+  File "/home/filip/miniconda3/envs/mycondaenv/lib/python3.8/multiprocessing/context.py", line 359, in assert_spawning
+    raise RuntimeError(
+RuntimeError: Queue objects should only be shared between processes through inheritance
+2025-08-01 17:14:32,161 [PID 231278] INFO main: Starting parameter search with 1 jobs
+2025-08-01 17:14:33,526 [PID 231278] ERROR main: Future for <netlist_generation_files.simulation_parameters.SimulationParameters object at 0x7f95bbfdc1f0> raised unexpectedly: Queue objects should only be shared between processes through inheritance
+concurrent.futures.process._RemoteTraceback: 
+"""
+Traceback (most recent call last):
+  File "/home/filip/miniconda3/envs/mycondaenv/lib/python3.8/multiprocessing/queues.py", line 239, in _feed
+    obj = _ForkingPickler.dumps(obj)
+  File "/home/filip/miniconda3/envs/mycondaenv/lib/python3.8/multiprocessing/reduction.py", line 51, in dumps
+    cls(buf, protocol).dump(obj)
+  File "/home/filip/miniconda3/envs/mycondaenv/lib/python3.8/multiprocessing/queues.py", line 58, in __getstate__
+    context.assert_spawning(self)
+  File "/home/filip/miniconda3/envs/mycondaenv/lib/python3.8/multiprocessing/context.py", line 359, in assert_spawning
+    raise RuntimeError(
+RuntimeError: Queue objects should only be shared between processes through inheritance
+"""
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/filip/simulations/improved_simulation_functions/multi_threading_modern_logging.py", line 112, in main
+    sim_ret, result, err = future.result()
+  File "/home/filip/miniconda3/envs/mycondaenv/lib/python3.8/concurrent/futures/_base.py", line 437, in result
+    return self.__get_result()
+  File "/home/filip/miniconda3/envs/mycondaenv/lib/python3.8/concurrent/futures/_base.py", line 389, in __get_result
+    raise self._exception
+  File "/home/filip/miniconda3/envs/mycondaenv/lib/python3.8/multiprocessing/queues.py", line 239, in _feed
+    obj = _ForkingPickler.dumps(obj)
+  File "/home/filip/miniconda3/envs/mycondaenv/lib/python3.8/multiprocessing/reduction.py", line 51, in dumps
+    cls(buf, protocol).dump(obj)
+  File "/home/filip/miniconda3/envs/mycondaenv/lib/python3.8/multiprocessing/queues.py", line 58, in __getstate__
+    context.assert_spawning(self)
+  File "/home/filip/miniconda3/envs/mycondaenv/lib/python3.8/multiprocessing/context.py", line 359, in assert_spawning
+    raise RuntimeError(
+RuntimeError: Queue objects should only be shared between processes through inheritance
+2025-08-01 17:16:35,613 [PID 231278] INFO main: Starting parameter search with 1 jobs
+2025-08-01 17:16:37,097 [PID 231278] ERROR main: Future for <netlist_generation_files.simulation_parameters.SimulationParameters object at 0x7f95bbf31490> raised unexpectedly: Queue objects should only be shared between processes through inheritance
+concurrent.futures.process._RemoteTraceback: 
+"""
+Traceback (most recent call last):
+  File "/home/filip/miniconda3/envs/mycondaenv/lib/python3.8/multiprocessing/queues.py", line 239, in _feed
+    obj = _ForkingPickler.dumps(obj)
+  File "/home/filip/miniconda3/envs/mycondaenv/lib/python3.8/multiprocessing/reduction.py", line 51, in dumps
+    cls(buf, protocol).dump(obj)
+  File "/home/filip/miniconda3/envs/mycondaenv/lib/python3.8/multiprocessing/queues.py", line 58, in __getstate__
+    context.assert_spawning(self)
+  File "/home/filip/miniconda3/envs/mycondaenv/lib/python3.8/multiprocessing/context.py", line 359, in assert_spawning
+    raise RuntimeError(
+RuntimeError: Queue objects should only be shared between processes through inheritance
+"""
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/filip/simulations/improved_simulation_functions/multi_threading_modern_logging.py", line 112, in main
+    sim_ret, result, err = future.result()
+  File "/home/filip/miniconda3/envs/mycondaenv/lib/python3.8/concurrent/futures/_base.py", line 437, in result
+    return self.__get_result()
+  File "/home/filip/miniconda3/envs/mycondaenv/lib/python3.8/concurrent/futures/_base.py", line 389, in __get_result
+    raise self._exception
+  File "/home/filip/miniconda3/envs/mycondaenv/lib/python3.8/multiprocessing/queues.py", line 239, in _feed
+    obj = _ForkingPickler.dumps(obj)
+  File "/home/filip/miniconda3/envs/mycondaenv/lib/python3.8/multiprocessing/reduction.py", line 51, in dumps
+    cls(buf, protocol).dump(obj)
+  File "/home/filip/miniconda3/envs/mycondaenv/lib/python3.8/multiprocessing/queues.py", line 58, in __getstate__
+    context.assert_spawning(self)
+  File "/home/filip/miniconda3/envs/mycondaenv/lib/python3.8/multiprocessing/context.py", line 359, in assert_spawning
+    raise RuntimeError(
+RuntimeError: Queue objects should only be shared between processes through inheritance
+2025-08-01 17:16:46,135 [PID 231278] INFO main: Parameter search complete

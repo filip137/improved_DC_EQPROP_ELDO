@@ -23,26 +23,29 @@ class netlist_builder():
         self.freq = simulation_parameters.freq
         self.simulation_time = simulation_parameters.simulation_time
         self.simulation_type = simulation_parameters.simulation_type
-        self.network_parameters_for_netlist = simulation_parameters.network_parameters_for_netlist
+        #self.network_parameters_for_netlist = simulation_parameters.network_parameters_for_netlist
         self.libraries = ".LIB /home/filip/CMOS130/corners.eldo \n"
         self.cs_bias = simulation_parameters.cs_bias
+        self.transient_params_for_netlist = simulation_parameters.transient_params_for_netlist
+        self.fsst_params_for_netlist = simulation_parameters.fsst_params_for_netlist
         
         self.bidir_dict = dicts[simulation_parameters.amplifier]
+
         
         
     def extract_subcircuits(self):
         subcircuit_lines = []
-        if self.neuron == "amp_ss":
+        if self.neuron:
             lines = self.bidir_dict['SUBCIRCUIT']
             subcircuit_lines.append(lines)
-        if self.cs_bias:  
+        if self.cs_bias == "self_biased":  
             self_biased_lines = improved_self_biased_nmos['SUBCIRCUIT']
             #pmos_cs_lines = pmos_cs['SUBCIRCUIT']
+            #the sources are actually the same only one is adapted to use in the transient analysis
             if self.simulation_type == "TRAN":
                 pmos_cs_lines = improved_pmos_cs['SUBCIRCUIT']
             elif self.simulation_type == "FSST":
-                pmos_cs_lines = pmos_cs['SUBCIRCUIT']
-
+                pmos_cs_lines = pmos_cs['SUBCIRCUIT'] #
             subcircuit_lines.append(self_biased_lines)
             subcircuit_lines.append(pmos_cs_lines)
         if self.simulation_type == "TRAN":
@@ -50,10 +53,10 @@ class netlist_builder():
                 subcircuit_lines.append(discharge_lines)
         return subcircuit_lines
         
-        
+       
     def extract_cmos_params(self):
         cmos_params = []
-        if self.neuron == "amp_ss":
+        if self.neuron:
             lines = self.bidir_dict['PARAMS']
             cmos_params.append(lines)
         
@@ -86,44 +89,46 @@ class netlist_builder():
     #     return extracted_subcircuits
 
     def extract_layer_parameters(self, layers):
-            # ampv = self.ampv
-            # ampc = self.ampc
+        """
+        Pull out `layer.parameters`, which may be:
+         - a dict
+         - a list of dicts
+         - nested lists of dicts/strings/None
+         - None or other types (skipped)
+        and return a flat list of strings like ".PARAM key=value".
+        """
         layer_parameters = []
-            # Add parameters from each layer with `.PARAM` prefix
+    
+        def _process(entry):
+            # Skip Nones
+            if entry is None:
+                return
+    
+            # Dict => .PARAM lines
+            if isinstance(entry, dict):
+                for k, v in entry.items():
+                    layer_parameters.append(f".PARAM {k}={v}")
+    
+            # String => include directly (in case you ever store raw lines)
+            elif isinstance(entry, str):
+                layer_parameters.append(entry)
+    
+            # List => recurse
+            elif isinstance(entry, list):
+                for sub in entry:
+                    _process(sub)
+    
+            # Everything else => ignore
+            else:
+                return
+    
         for layer in layers:
             try:
-                params = layer.parameters
-        
-                # Case 1: single dict
-                if isinstance(params, dict):
-                    dicts = [params]
-        
-                # Case 2: list of dicts
-                elif isinstance(params, list) and all(isinstance(p, dict) for p in params):
-                    dicts = params
-        
-                # Case 3: other list types (just append the list)
-                elif isinstance(params, list):
-                    layer_parameters.append(params)
-                    continue
-        
-                # Anything else, skip
-                else:
-                    continue
-        
-                # Emit .PARAM lines for every dict in dicts
-                for pdict in dicts:
-                    for key, value in pdict.items():
-                        layer_parameters.append(f".PARAM {key}={value}")
-        
+                _process(layer.parameters)
             except Exception:
-                # you can log or handle errors here if you like
+                # optionally log, but continue on errors
                 continue
-        
-                    # Add other parameters with `.PARAM` prefix
-                    # all_parameters.extend([f".PARAM {item}" for item in ampv])
-                    # all_parameters.extend([f".PARAM {item}" for item in ampc])
-            
+    
         return layer_parameters
 
 
@@ -132,14 +137,15 @@ class netlist_builder():
             # ampc = self.ampc
         network_parameters = []
             # Add parameters from each layer with `.PARAM` prefix
+        if self.simulation_type == "TRAN":
+            for key, value in self.transient_params_for_netlist.items():
+                line = f".PARAM {key}={value}"
+                network_parameters.append(line)
 
-        for key, value in self.network_parameters_for_netlist.items():
-            line = f".PARAM {key}={value}"
-            network_parameters.append(line)
-            # Add other parameters with `.PARAM` prefix
-            # all_parameters.extend([f".PARAM {item}" for item in ampv])
-            # all_parameters.extend([f".PARAM {item}" for item in ampc])
-            
+        elif self.simulation_type == "FSST":
+            for key, value in self.fsst_params_for_netlist.items():
+                line = f".PARAM {key}={value}"
+                network_parameters.append(line)
         return network_parameters
 
 
@@ -204,33 +210,44 @@ class netlist_builder():
                # Join the vm_list into a string, removing unnecessary spaces and ensuring formatting
                 vm_string = " ".join(filter(None, vm_list)).replace(" \n.", "\n.")
                 # vi_string = " ".join(filter(None, vi_list)).replace(" \n.", "\n.")
-                
+                isub_string = ""
+                vdc_string = ""
+                idc_string = ""
                 
                 if transcon_calc:
                     fet1 = fet_identifiers[0]
                     fet2 = fet_identifiers[1]
-                    simulation_details = (
+                    fet3 = "1_3_2"
+                    fet4 = "1_4_2"
+                    fet5 = "0_2_1"
+                    fet6 = "0_3_1"
+                    fet7 = "0_4_1"
+                    fet8 = "0_5_1"
+                    isub_string = f".EXTRACT FSST YVAL(ISUB(XM_{fet1}.S), 1MEG) YVAL(ISUB(XM_{fet2}.S), 1MEG)"
+                    isub2_string = f"YVAL(ISUB(XM_{fet5}.S), 1MEG) YVAL(ISUB(XM_{fet6}.S), 1MEG) YVAL(ISUB(XM_{fet7}.S), 1MEG) YVAL(ISUB(XM_{fet8}.S), 1MEG)"
+                    isub_string += isub2_string
+                    idc2_string = f"ISUB(XM_{fet5}.S) ISUB(XM_{fet6}.S) ISUB(XM_{fet7}.S) ISUB(XM_{fet8}.S)"
+                    idc_string = f".EXTRACT FSST ISUB(XM_{fet1}.S) ISUB(XM_{fet2}.S) ISUB(XM_{fet3}.S) ISUB(XM_{fet4}.S)"
+                    idc_string += idc2_string
+                    measure_source_current = False
+                    if measure_source_current:
+                        idc_string += (f"ISUB(XSBCS011.INOUTPUT_SELF_BIASED_CS) ISUB(XPMOS_CS2.INOUTPUT_PMOS_CS)")
+                    vdc_string = f".EXTRACT FSST V(V_IN_1_2) V(V_OUT_0_1) V(V_OUT_1_2)"
+
+                simulation_details = (
                     
                         
 
-                    f".SST FUND1={freq} NHARM1=1\n"
-                    ".DC\n"
-                    f"{vm_string}\n" ##here also append vi string if it's needed
-                    ".OPTION AEX\n"
-                    ".OPTION NOASCII\n"
-                    ".END\n"
-                    )
-                #f".AC LIST {freq}\n"
-                else: 
-                
-                    simulation_details = (
-                    
-                        f".SST FUND1={freq} NHARM1=1\n"
-                        f"{vm_string}\n" ##here also append vi string if it's needed
-                        ".OPTION AEX\n"
-                        ".OPTION NOASCII\n"
-                        ".END\n"
-                        )
+                f".SST FUND1={freq} NHARM1=1\n"
+                f"{vm_string}\n" ##here also append vi string if it's needed
+                f"{isub_string}\n"
+                f"{idc_string}\n"
+                f"{vdc_string}\n"
+                ".OPTION AEX\n"
+                ".OPTION NOASCII\n"
+                ".END\n"
+                )
+
     
     
             #the idea is that each gate voltage is set by the uic command to the value of the last run
@@ -293,38 +310,33 @@ class netlist_builder():
                 vg_string = " ".join(filter(None, vg_ic_list)).replace(" \n.", "\n.")
                 # vi_string = " ".join(filter(None, vi_list)).replace(" \n.", "\n.")                
                 print_file_line = f".PRINTFILE TRAN FILE={printfile} START=0 STOP={self.simulation_time}"
-                isub_string = f"{print_file_line} ISUB(XM_0_1_1.S) ISUB(XM_1_1_1.S)"
-                amp_string = f"{print_file_line} V(XI011.XI1.OUTPUT_CS_1) V(XI011.XI1.OUTPUT_CS_2) V(XI011.NET05)"
-                amp_characterization = True
-                
-                if amp_characterization:
+                if transcon_calc:
                     fet1 = fet_identifiers[0]
                     fet2 = fet_identifiers[1]
-                    simulation_details = (
-                    
-                    f".TRAN 0.1u {self.simulation_time} uic\n"
-                    f"{isub_string}\n"
-                    f"{amp_string}\n"
-                    f"{vm_string}\n"
-                    f"{vg_string}\n"
-                    f"{vds_string}\n"
-                    ".OPTION PRINTFILE_TIME_STEP=0.1u\n"
-                    ".OPTION NOASCII\n"
-                    ".END\n"
-                    )
-                #f".AC LIST {freq}\n"
-                else: 
+                    pmos_cs = f"XPMOS_CS2.INOUTPUT_PMOS_CS"
+                    isub_string = f"{print_file_line} ISUB(XSBCS011.INOUTPUT_SELF_BIASED_CS) ISUB(XM_{fet1}.S) ISUB(XM_{fet2}.S) ISUB({pmos_cs})"
+
+                else:
+                    isub_string = ""
+                amp_string = f"{print_file_line} V(XI011.XI1.OUTPUT_CS_1) V(XI011.XI1.OUTPUT_CS_2) V(XI011.NET05)"
+                inudge_string = "I(I_SOURCE2)"
+                amp_string += " " + inudge_string
+                amp_characterization = True
                 
-                    simulation_details = (
-                    
-                    f".TRAN 0.1u {self.simulation_time} uic\n"
-                    f"{vm_string}\n"
-                    f"{vg_string}\n"
-                    f"{vds_string}\n"
-                    ".OPTION PRINTFILE_TIME_STEP=0.1u\n"
-                    ".OPTION NOASCII\n"
-                    ".END\n"
-                    )
+
+                simulation_details = (
+                f".TRAN 0.1u {self.simulation_time} uic\n"
+                f"{isub_string}\n"
+                f"{amp_string}\n"
+                f"{vm_string}\n"
+                f"{vg_string}\n"
+                f"{vds_string}\n"
+                ".OPTION PRINTFILE_TIME_STEP=0.1u\n"
+                ".OPTION NOASCII\n"
+                ".END\n"
+                )
+                #f".AC LIST {freq}\n"
+
                     
                     
             elif simulation_type == "DC":
@@ -360,12 +372,16 @@ class netlist_builder():
             with open(file_name, 'w') as file:
                 file.write(header)
                 for line in layer_parameter_lines:
-                    file.write(line + '\n')  # Ensure line is a string and add a newline
+                    if line is not None:
+
+                        file.write(line + '\n')  # Ensure line is a string and add a newline
                 for line in network_parameter_lines:
-                    file.write(line + '\n')  # Ensure line is a string and add a newline
+                    if line is not None:
+                        file.write(line + '\n')  # Ensure line is a string and add a newline
                 if simulation_type == 'TRAN':
                     for line in end_volt_list:
-                        file.write(line + '\n')
+                        if line is not None:
+                            file.write(line + '\n')
                 cmos_parameters_lines = "".join(cmos_parameters)
                 file.write(cmos_parameters_lines) 
                 file.write("\n \n ***END OF THE PARAMETER SECTION \n \n \n")

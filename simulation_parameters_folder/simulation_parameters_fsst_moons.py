@@ -1,7 +1,7 @@
 from datetime import datetime
 import os
 
-class SimulationParameters:
+class SimulationParametersFSST:
     def __init__(self, scale_factor, bias, batch_size, beta, gamma_values):
         
         
@@ -13,7 +13,7 @@ class SimulationParameters:
 
         # Network initialization parameters
         self.simulation_type = "FSST"  # FSST OR DC OR TRAN
-        self.network_size = [9, 12, 6]  # [input, hidden, output]
+        self.network_size = [5, 12, 4]  # [input, hidden, output]
         self.freq = "1MEG"
         self.neuron = "amp_ss"  # amp_ss or perfect_amp
         self.amplifier = "BiDirWithNonLin" # "BiDirWithNonLin" or "BiDirWithOutNonLin" or OldBiDirAmp or ThreeTerminalBiDirAmp
@@ -29,8 +29,8 @@ class SimulationParameters:
         
         self.cs_bias = "perfect_curr_source" #"perfect_curr_source" or "self_biased" or False
         if self.cs_bias == "perfect_curr_source": 
-            self.layer1_bias_curr = 9 * 5 * 1e-6 #When I am using large networks that are difficult to bias with the nmos sources I am using DC sources with this bias current
-            self.layer2_bias_curr = 12* 5 * 1e-6 #The idea is that for each synapse that is connected to the neuron they should provide 10e-6 Amps
+            self.layer1_bias_curr = 5 * 5 * 1e-6 #When I am using large networks that are difficult to bias with the nmos sources I am using DC sources with this bias current
+            self.layer2_bias_curr = 5 * 12 * 1e-6 #The idea is that for each synapse that is connected to the neuron they should provide 10e-6 Amps
         
  
         self.synapse = "fet" # fet or resistor
@@ -68,17 +68,17 @@ class SimulationParameters:
             
         elif self.simulation_type == "TRAN":
             self.diode_connected_flash_params = {
-                       "offset1layer" : -0.7,
-                       "offset2layer" : -0.48,
-                       "gain" : [1/3.5e-5, 1/3.4e-5]} #gain layer1 and gainlayer2
+                       "offset1layer" : -1.25,
+                       "offset2layer" : -1,
+                       "gain" : [1/3e-5, 1/3e-5]} #gain layer1 and gainlayer2
             
         
         # base directories
         base_aex = "/home/filip/simulations/aex_files"
         if mode == "TRAIN":
             base_models = "/home/filip/simulations/trained_models"
-        if mode == "TRAIN":
-            base_models = "/home/filip/simulations/trained_models"
+        if mode == "TEST":
+            base_models = "/home/filip/simulations/test_models"
         elif mode == "VALIDATION":
             base_models = "/home/filip/simulations/validation_plots"
 
@@ -90,7 +90,7 @@ class SimulationParameters:
             f"{self.synapse}_{self.simulation_type}_{date_str}"
         )
         # Dataset parameters
-        self.dataset = "iris"
+        self.dataset = "moons"
         self.n_of_epochs = 100
         self.scale_factor = scale_factor
         self.noise = 0.1
@@ -146,6 +146,8 @@ class SimulationParameters:
                 "START_DISCHARGE_TIME" : self.start_discharge_time,
                 "END_DISCHARGE_TIME" : self.end_discharge_time,
                 "RISE_TIME" : self.rise_time,
+                "layer1_bias_curr" : getattr(self, "layer1_bias_curr", 0),
+                "layer2_bias_curr" : getattr(self, "layer2_bias_curr", 0),
                 "FORM" : 0,
                 "LOW_NOISE_OPTION" : 0
                 }
