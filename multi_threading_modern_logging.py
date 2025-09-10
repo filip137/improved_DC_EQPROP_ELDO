@@ -1,10 +1,10 @@
+import argparse
 import os
 import traceback
 import multiprocessing
 import logging
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from neural_network_4_output_version_tran import train
-from simulation_parameters_folder import SimulationParametersTran
+
 
 
 # Optional progress bar; if you have tqdm installed it will show progress.
@@ -21,9 +21,33 @@ try:
 except RuntimeError:
     pass  # already set
 
-# Directory for main and worker logs
-LOG_DIR = "/home/filip/simulations/logging_folder"
-os.makedirs(LOG_DIR, exist_ok=True)
+
+simulation_type = "DC"  # or "FSST", "AC", etc.
+
+
+from neural_network_unified import train 
+
+
+if simulation_type == "TRAN":
+    # from neural_network_4_output_version_tran import train
+    from simulation_parameters_folder import SimulationParametersTran as SimulationParameters
+    LOG_DIR = "/home/filip/simulations/logging_folder_trans"
+    os.makedirs(LOG_DIR, exist_ok=True)
+elif simulation_type == "FSST":
+    # from neural_network_4_output_version_fsst import train
+    from simulation_parameters_folder import SimulationParametersFSST as SimulationParameters
+    LOG_DIR = "/home/filip/simulations/logging_folder_FSST"
+    os.makedirs(LOG_DIR, exist_ok=True)
+elif simulation_type == "DC":
+    # from neural_network_4_output_version_DC import train
+    from simulation_parameters_folder import SimulationParametersDC as SimulationParameters
+    LOG_DIR = "/home/filip/simulations/logging_folder_DC"
+    os.makedirs(LOG_DIR, exist_ok=True)
+else:
+    raise ValueError(f"Unknown simulation_type: {simulation_type}")
+
+
+
 
 
 def configure_main_logger():
@@ -59,16 +83,17 @@ def get_worker_logger(sim_params):
 
 def build_param_grid():
     sim_params_list = []
-    gamma_value_list = [[-3e-8, 25e-10], [3e-8, 25e-10], [-3e-8, 0], [-3e-8, 25e-9], [3e-8, 25e-9]]
+    gamma_value_list = [[6e-10, 25e-11], [3e-9, 25e-10], [10e-10, 25e-11]]
     batch_size = 2
     beta = 5e-5
-    scale_factor_list = [0.3]
+    scale_factor_list = [0.4, 0.5]
     bias = 0.3
-
-    for gamma_value in gamma_value_list:
+    load_weights = False
+    h5_file = None
+    for gamma_values in gamma_value_list:
         for scale_factor in scale_factor_list:
             sim_params_list.append(
-                SimulationParametersTran(scale_factor, bias, batch_size, beta, gamma_value)
+                SimulationParameters(scale_factor, bias, batch_size, beta, gamma_values, load_weights, h5_file)
             )
     return sim_params_list
 

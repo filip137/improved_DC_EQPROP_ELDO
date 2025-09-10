@@ -38,8 +38,15 @@ def plot_current(time, current):
     plt.show()
 
 def remove_directory(directory_path):
-    shutil.rmtree("directory_path", ignore_errors=True)
-    print(f"Succesfully removed directory{directory_path}")
+    try:
+        shutil.rmtree(directory_path)  # remove actual variable path
+        print(f"Successfully removed directory {directory_path}")
+    except FileNotFoundError:
+        print(f"Warning: directory not found: {directory_path}")
+    except PermissionError:
+        print(f"Error: permission denied when removing {directory_path}")
+    except OSError as e:
+        print(f"Error removing {directory_path}: {e}")
 
 
 
@@ -475,7 +482,12 @@ def parse_aex_file_from_end_offset(
     with open(filename, 'r') as f:
         f.seek(seek_position or 0)
         lines = f.readlines()
-
+    # total_lines = len(lines)
+    # total_chars = sum(len(l) for l in lines)  # total character count
+    # total_bytes = sum(len(l.encode('utf-8')) for l in lines)  # total byte size
+    
+    # print(f"[DEBUG] Read {total_lines} lines, {total_chars} chars, {total_bytes} bytes "
+    #   f"from offset {seek_position or 0}")
     # Part 2: grab everything from the end up to the TEMPERATURE line
     selected_lines = []
     for line in reversed(lines):
@@ -600,75 +612,26 @@ def make_param_dict(orig_dict, prefix="V_END_"):
 
 
 
-def plot_specified_columns(df_last, columns_to_plot, time_col=None):
+
+def compute_fourier_coefficients2(
+    df,
+    f0,
+    t0,
+    n_harmonics: int = 1,          # kept for API compatibility; we compute the 1st harmonic
+    n_periods: int = 4,
+    voltage_cols=None,
+    transcon_calc: bool = False,
+    store_complex_parts: bool = True,  # NEW: also store 2*Re(C1) and 2*Im(C1)
+):
     """
-    Plot specified columns from df_last against a time axis.
-
-    Parameters
-    ----------
-    df_last : pandas.DataFrame
-        DataFrame containing at least a time column and the columns you want to plot.
-    columns_to_plot : list of str
-        Names of columns in df_last to plot.
-    time_col : str, optional
-        Name of the time column in df_last. If None, will auto-detect
-        the first column named 'time' (case-insensitive).
-
-    Raises
-    ------
-    KeyError
-        If the time column or any of the requested columns are missing.
+    Extended to also collect columns that begin with V(X...) into amp_voltages.
     """
-    # detect or validate time column
-    if time_col is None:
-        # look for any column named 'time' (case-insensitive)
-        matches = [c for c in df_last.columns if c.lower() == 'time']
-        if not matches:
-            raise KeyError("No time column found. Please specify time_col.")
-        time_col = matches[0]
-
-    # check that the requested columns exist
-    missing = set(columns_to_plot) - set(df_last.columns)
-    if missing:
-        raise KeyError(f"Columns not found in DataFrame: {missing}")
-
-    # plot
-    plt.figure(figsize=(8, 5))
-    for col in columns_to_plot:
-        plt.plot(df_last[time_col], df_last[col], label=col)
-    plt.xlabel(time_col)
-    plt.ylabel("Value")
-    plt.title("Selected Channels over Time")
-    plt.legend()
-    plt.grid(True)
-    plt.tight_layout()
-    plt.show()
-
-
-
-def compute_fourier_coefficients2(df, f0, t0, n_harmonics=1, n_periods=4,
-                                  voltage_cols=None, transcon_calc: bool = False):
-    """
-    For each VG_* and V_* column, return the last voltage sample as DC,
-    and compute AC magnitudes via Goertzel-like correlation.
-    If transcon_calc=True, also collect ISUB* columns into isub_dict.
-    If a column name starts with 'ISUB', skip Fourier and optionally call plot_current(time, values).
-
-    Returns
-    -------
-    results : dict
-        Contains keys:
-          dc_gate_end, dc_gate, ac_gate,
-          dc_ds_end, dc_ds, ac_ds,
-          used_columns,
-          ac_isub, dc_isub  (only if transcon_calc=True; keys are stripped of the ISUB(...) wrapper)
-    """
-    # find time column
+    # --- find time column ---
     time_col = next((c for c in df.columns if c.lower() == 'time'), None)
     if time_col is None:
         raise KeyError("DataFrame must have a 'time' column.")
 
-    # select voltage/current columns
+    # --- select voltage/current columns ---
     if voltage_cols is None:
         voltage_cols = [c for c in df.columns if c != time_col]
     else:
@@ -676,30 +639,43 @@ def compute_fourier_coefficients2(df, f0, t0, n_harmonics=1, n_periods=4,
         if missing:
             raise KeyError(f"Columns not found: {missing}")
 
-    # extract time vector once
+    # --- extract time vector once ---
     t_full = df[time_col].values
     if t_full.size < 2:
         raise ValueError("Need at least two samples.")
     dt = np.median(np.diff(t_full))
+    if not np.isfinite(dt) or dt <= 0:
+        raise ValueError("Invalid or non-positive time step detected.")
     fs = 1.0 / dt
 
-    # analysis window length (integer # of cycles)
+    # --- analysis window length (integer # of cycles) ---
+    if f0 <= 0:
+        raise ValueError("f0 must be positive.")
     T = 1.0 / f0
     N_cycle = int(round(T * fs))
+    if N_cycle <= 0:
+        raise ValueError("Sampling rate too low for the requested f0.")
     N = n_periods * N_cycle
-    i0 = 0 if t0 <= t_full[0] else np.searchsorted(t_full, t0)
 
-    dc_gate_end = {}
-    dc_gate = {}
-    ac_gate = {}
-    dc_ds_end = {}
-    dc_ds = {}
-    ac_ds = {}
+    # starting index
+    i0 = 0 if t0 <= t_full[0] else int(np.searchsorted(t_full, t0, side="left"))
+
+    # --- outputs ---
+    dc_gate_end, dc_gate, ac_gate = {}, {}, {}
+    dc_ds_end, dc_ds, ac_ds = {}, {}, {}
     used_columns = []
+    amp_voltages = {}  # NEW: for V(X...) voltages
 
-    # prepare AC and DC current dicts if requested
     ac_isub = {} if transcon_calc else None
     dc_isub = {} if transcon_calc else None
+
+    # NEW: explicit real/imag outputs (optional)
+    ac_gate_re = {} if store_complex_parts else None
+    ac_gate_im = {} if store_complex_parts else None
+    ac_ds_re   = {} if store_complex_parts else None
+    ac_ds_im   = {} if store_complex_parts else None
+    ac_isub_re = {} if (store_complex_parts and transcon_calc) else None
+    ac_isub_im = {} if (store_complex_parts and transcon_calc) else None
 
     for col in voltage_cols:
         used_columns.append(col)
@@ -707,45 +683,69 @@ def compute_fourier_coefficients2(df, f0, t0, n_harmonics=1, n_periods=4,
 
         # ensure we have enough samples
         if i0 + N > v.size:
-            raise ValueError(f"Not enough samples in column {col}.")
+            raise ValueError(f"Not enough samples in column {col} (need {N}, have {v.size - i0}).")
 
         seg = v[i0:i0 + N]
         t_seg = t_full[i0:i0 + N]
 
-        # compute AC magnitude (Goertzel-like)
+        # --- Goertzel-like coefficient at f0: C1 = (1/N) * sum(seg * e^{-j 2? f0 t}) ---
         expo = np.exp(-2j * np.pi * f0 * t_seg)
         C1 = np.dot(seg, expo) / N
-        amp1 = 2 * C1.imag
 
+        amp1 = 2.0 * C1.imag  # legacy: sine coefficient
+
+        if store_complex_parts:
+            amp_re = 2.0 * C1.real
+            amp_im = 2.0 * C1.imag
+
+        # --- handle ISUB(...) currents ---
         if col.startswith("ISUB"):
-            # strip wrapper ISUB(...) to get inner node name
             if col.startswith("ISUB(") and col.endswith(")"):
                 key = col[len("ISUB("):-1]
             else:
-                key = col  # fallback if unexpected format
-
+                key = col
             if transcon_calc:
                 ac_isub[key] = amp1
-                dc_val = np.round(np.mean(seg), 6)
-                dc_isub[key] = dc_val
-            continue  # skip the voltage handling
+                if store_complex_parts:
+                    ac_isub_re[key] = amp_re
+                    ac_isub_im[key] = amp_im
+                dc_isub[key] = float(np.round(np.mean(seg), 6))
+            continue
 
-        # DC = last sample (for voltages only)
-        last_val = np.round(v[-1], 3)
+        # --- voltages ---
+        last_val = float(np.round(v[-1], 3))
 
-        # assign voltages into gate/drain-source dicts
-        if col.startswith('V('):
+        if col.startswith('V(') and col.endswith(')'):
             vol_name = col[2:-1]
+            mid_val = float(np.round(np.mean(seg), 6))
+
             if vol_name.startswith('VG'):
                 dc_gate_end[vol_name] = last_val
-                mid_val = np.round(np.mean(seg), 6)
                 dc_gate[vol_name] = mid_val
                 ac_gate[vol_name] = amp1
+                if store_complex_parts:
+                    ac_gate_re[vol_name] = amp_re
+                    ac_gate_im[vol_name] = amp_im
+
             elif vol_name.startswith('V_'):
                 dc_ds_end[vol_name] = last_val
-                mid_val = np.round(np.mean(seg), 6)
                 dc_ds[vol_name] = mid_val
                 ac_ds[vol_name] = amp1
+                if store_complex_parts:
+                    ac_ds_re[vol_name] = amp_re
+                    ac_ds_im[vol_name] = amp_im
+
+            elif vol_name.startswith('X'):  # NEW: voltages like V(X...)
+                amp_voltages[vol_name] = {
+                    "dc_end": last_val,
+                    "dc_mid": mid_val,
+                    "ac": amp1,
+                }
+                if store_complex_parts:
+                    amp_voltages[vol_name].update({
+                        "ac_re": amp_re,
+                        "ac_im": amp_im,
+                    })
 
     results = {
         "dc_gate_end": dc_gate_end,
@@ -757,9 +757,17 @@ def compute_fourier_coefficients2(df, f0, t0, n_harmonics=1, n_periods=4,
         "used_columns": used_columns,
         "ac_isub": ac_isub,
         "dc_isub": dc_isub,
+        "amp_voltages": amp_voltages,   # NEW
     }
-    return results
 
+    if store_complex_parts:
+        results.update({
+            "ac_gate_re": ac_gate_re, "ac_gate_im": ac_gate_im,
+            "ac_ds_re":   ac_ds_re,   "ac_ds_im":   ac_ds_im,
+            "ac_isub_re": ac_isub_re, "ac_isub_im": ac_isub_im,
+        })
+
+    return results
 
 
 
@@ -1140,28 +1148,124 @@ def plot_tran_voltages(
                 columns_to_plot,
                 time_col=None
             )
-
-
-
-
-
-def read_update(eldo_process, result_file, voltage_dict_free, offset, simulation_type, transcon_calc, debug, *, f0=None, t0=None):
+import math
+def plot_specified_columns(df_last, columns_to_plot, results, time_col=None):
     """
-    If transcon_calc=True, also compute DC/AC for ISUB* currents and
-    return them alongside voltage_dict_free.
+    Plot specified columns from df_last against a time axis, using multiple figures.
+    Each figure contains at most 2 columns plotted together.
+    For each plotted column, display:
+      - real part of Fourier coefficient
+      - imaginary part
+      - phase shift (degrees)
 
-    Parameters
-    ----------
-    eldo_process
-    result_file
-    voltage_dict_free
-    offset
-    simulation_type : "FSST" or "TRAN"
-    debug : bool
-    f0 : float, optional   # required for TRAN
-    t0 : float, optional   # required for TRAN
-    transcon_calc : bool, optional
+    Handles:
+      - ISUB(...) currents   -> uses ac_isub_re / ac_isub_im
+      - V(...) voltages      -> uses ac_gate_re / ac_gate_im, ac_ds_re / ac_ds_im
+      - V(X...) amp voltages -> uses results["amp_voltages"][<name>]["ac_re"] / ["ac_im"]
     """
+
+    # detect or validate time column
+    if time_col is None:
+        matches = [c for c in df_last.columns if c.lower() == 'time']
+        if not matches:
+            raise KeyError("No time column found. Please specify time_col.")
+        time_col = matches[0]
+
+    # check that the requested columns exist
+    missing = set(columns_to_plot) - set(df_last.columns)
+    if missing:
+        raise KeyError(f"Columns not found in DataFrame: {missing}")
+
+    # helper: normalize names
+    def normalize_col_name(col: str) -> str:
+        # ISUB(...) currents -> strip wrapper
+        if col.startswith("ISUB(") and col.endswith(")"):
+            return col[5:-1]
+        # V(...) voltages -> strip wrapper and keep inside
+        if col.startswith("V(") and col.endswith(")"):
+            return col[2:-1]
+        return col
+
+    # split columns into chunks of size 2
+    n_cols = len(columns_to_plot)
+    n_figures = math.ceil(n_cols / 2)
+
+    for i in range(n_figures):
+        cols = columns_to_plot[i*2:(i+1)*2]
+        plt.figure(figsize=(8, 5))
+        time = df_last[time_col].values
+
+        for col in cols:
+            norm_col = normalize_col_name(col)
+            re, im = None, None
+
+            # Case 1: check standard Fourier dicts
+            if "ac_gate_re" in results and norm_col in results["ac_gate_re"]:
+                re = results["ac_gate_re"][norm_col]
+                im = results["ac_gate_im"][norm_col]
+            elif "ac_ds_re" in results and norm_col in results["ac_ds_re"]:
+                re = results["ac_ds_re"][norm_col]
+                im = results["ac_ds_im"][norm_col]
+            elif "ac_isub_re" in results and norm_col in results["ac_isub_re"]:
+                re = results["ac_isub_re"][norm_col]
+                im = results["ac_isub_im"][norm_col]
+
+            # Case 2: check amp_voltages (V(X...) case)
+            elif "amp_voltages" in results and norm_col in results["amp_voltages"]:
+                entry = results["amp_voltages"][norm_col]
+                re = entry.get("ac_re")
+                im = entry.get("ac_im")
+
+            # Compose label
+            if re is not None and im is not None:
+                phase_rad = math.atan2(im, re)
+                phase_deg = math.degrees(phase_rad)
+                label = f"{col}\nRe={re:.3e}, Im={im:.3e}, Phase={phase_deg:.2f}°"
+            else:
+                label = f"{col} (Fourier N/A)"
+
+            plt.plot(time, df_last[col], label=label)
+
+        plt.xlabel(time_col)
+        plt.ylabel("Value")
+        plt.title(f"Channels {', '.join(cols)} over Time")
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+
+
+
+
+def _group_columns_for_tran_plot(df_last):
+    """Return (voltage_cols, current_cols) based on column names."""
+    cols = list(df_last.columns)
+    # time is excluded
+    time_cols = [c for c in cols if c.lower() == 'time']
+    time_col = time_cols[0] if time_cols else None
+
+    voltage_cols = [c for c in cols if c != time_col and c.startswith('V(') and c.endswith(')')]
+    current_cols = [c for c in cols if c != time_col and c.startswith('ISUB')]
+    return voltage_cols, current_cols
+
+
+
+
+def read_update(
+    eldo_process,
+    result_file,
+    voltage_dict_free,
+    offset,
+    simulation_type,
+    transcon_calc,
+    debug,
+    *,
+    f0=None,
+    t0=None,
+    plot_target: str = None,          # NEW: what to plot in TRAN
+    columns_to_plot: list = None):   
+    
+    
     current_dict = None
     dc_voltage_dict = None
     if simulation_type == "FSST":
@@ -1176,7 +1280,7 @@ def read_update(eldo_process, result_file, voltage_dict_free, offset, simulation
         df_last, _ = open_and_read_txt_file(result_file, offset)
         res = compute_fourier_coefficients2(
             df_last, f0, t0,
-            n_harmonics=1, n_periods=4,
+            n_harmonics=1, n_periods=1,
             transcon_calc=transcon_calc
         )
         # build result_dict
@@ -1192,6 +1296,20 @@ def read_update(eldo_process, result_file, voltage_dict_free, offset, simulation
             'ac_isub':   (res.get('ac_isub') or {}),
             'dc_isub':   (res.get('dc_isub') or {})
         }
+        
+        # ---------- NEW: optional plotting (TRAN only) ----------
+        
+        if plot_target and plot_target.lower() != "none":
+            v_cols, i_cols = _group_columns_for_tran_plot(df_last)
+            v_cols = ['V(V_IN_0_1)', 'V(V_OUT_0_1)', 'V(V_OUT_1_1)', 'V(V_IN_1_1)', 'V(XI011.NET05)', 'V(XI011.XI1.OUTPUT_CS_1)', 'V(XI011.XI1.OUTPUT_CS_2)']
+            v_cols += ['V(XI011.XI2.INPUT_DIFFERENTIAL1)', 'V(XI011.XI2.INPUT_DIFFERENTIAL2)']
+            # Plot voltages if v_cols is not None and not empty
+            if v_cols:
+                plot_specified_columns(df_last, v_cols, res)
+        
+            # Plot currents if i_cols is not None and not empty
+            if i_cols:
+                plot_specified_columns(df_last, i_cols, res)
         # update voltage_dict_free with AC drain-source
         for node, coeff in res['ac_ds'].items():
             if node in voltage_dict_free:
@@ -1490,10 +1608,10 @@ def update_synapses(eldo_process, resistive_layers, diode_connected_flash_params
     #If the simulation is FSST, I calculate the new synapse dict, which contains the new gate voltages to be applied
     #If the simulation is TRAN I also calculate the new gate voltages to be applied, but then I still need to calculate how much charge (or current) I need to supply to the
     #   gate to get these voltages
-    
-    offset1layer = diode_connected_flash_params['offset1layer']
-    offset2layer = diode_connected_flash_params['offset2layer']
-    gain = diode_connected_flash_params['gain']
+    if diode_connected_flash_params:
+        offset1layer = diode_connected_flash_params['offset1layer']
+        offset2layer = diode_connected_flash_params['offset2layer']
+        gain = diode_connected_flash_params['gain']
     
     
     
@@ -1507,7 +1625,8 @@ def update_synapses(eldo_process, resistive_layers, diode_connected_flash_params
             payload = layer.synapse_dict
         elif simulation_type == "FSST":
             payload = layer.synapse_dict
-
+        elif simulation_type == "DC":
+            payload = layer.synapse_dict
         set_synapses(eldo_process, payload, debug)
 
 
@@ -1589,7 +1708,7 @@ def run_trans_and_DC(process, sim_time, q, debug):
     """Runs the Eldo simulation."""
 
     # --- First Simulation (TRANS) ---
-    tran_line = f".TRAN 0.1u {sim_time} uic"
+    tran_line = f".TRAN 0.01u {sim_time} uic"
     try:
         #start_time = time.time()
 

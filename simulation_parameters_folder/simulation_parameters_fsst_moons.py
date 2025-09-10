@@ -2,26 +2,45 @@ from datetime import datetime
 import os
 
 class SimulationParametersFSST:
-    def __init__(self, scale_factor, bias, batch_size, beta, gamma_values):
+    def __init__(self, scale_factor, bias, batch_size, beta, gamma_values, output_scale, load_weights, h5_file):
         
         
-        mode = "VALIDATION"
-        
+        mode = "TRAIN"
+        self.load_weights = load_weights
+        self.h5_file = h5_file
+
         
         date_str = datetime.now().strftime("%m%d")
         hour_str = datetime.now().strftime("%H%M%S")
 
         # Network initialization parameters
         self.simulation_type = "FSST"  # FSST OR DC OR TRAN
-        self.network_size = [5, 12, 4]  # [input, hidden, output]
-        self.freq = "1MEG"
+        self.network_size = [5, 15, 4]  # [input, hidden, output]
+        self.freq = "5MEG"
         self.neuron = "amp_ss"  # amp_ss or perfect_amp
-        self.amplifier = "BiDirWithNonLin" # "BiDirWithNonLin" or "BiDirWithOutNonLin" or OldBiDirAmp or ThreeTerminalBiDirAmp
+        if self.neuron not in {"amp_ss", "perfect_amp"}:
+            raise ValueError("neuron must be 'amp_ss' or 'perfect_amp'.")
+        
+        # Assign amplifier
+        self.amplifier = "BiDirWithOutNonLin"  # allowed options below
+        if self.amplifier not in {
+            "BiDirWithNonLin",
+            "BiDirWithOutNonLin",
+            "OldBiDirAmp",
+            "ThreeTerminalBiDirAmp",
+            "PerfectAmpWithNonlin",
+            "BiDirWithNonLinCAP"
+        }:
+            raise ValueError(
+                "amplifier must be one of: "
+                "'BiDirWithNonLin', 'BiDirWithOutNonLin', 'OldBiDirAmp', "
+                "'ThreeTerminalBiDirAmp', 'PerfectAmpWithNonlin'."
+            )
+            
         if self.amplifier == "ThreeTerminalBiDirAmp":
-            self.non_lin = True
+            self.non_lin = False
         else:
             self.non_lin = False
-        
   # This is essentially the reading voltage for the FSST analysis
         
         
@@ -29,13 +48,15 @@ class SimulationParametersFSST:
         
         self.cs_bias = "perfect_curr_source" #"perfect_curr_source" or "self_biased" or False
         if self.cs_bias == "perfect_curr_source": 
-            self.layer1_bias_curr = 5 * 5 * 1e-6 #When I am using large networks that are difficult to bias with the nmos sources I am using DC sources with this bias current
-            self.layer2_bias_curr = 5 * 12 * 1e-6 #The idea is that for each synapse that is connected to the neuron they should provide 10e-6 Amps
+            size_of_hidden_layer = self.network_size[1]
+            self.layer1_bias_curr = 5 * 5 * 1e-6#When I am using large networks that are difficult to bias with the nmos sources I am using DC sources with this bias current
+            self.layer2_bias_curr = 5 * size_of_hidden_layer * 1e-6 #The idea is that for each synapse that is connected to the neuron they should provide 10e-6 Amps
         
  
         self.synapse = "fet" # fet or resistor
         #[1e-6, 2e-7]
         self.gamma_values = gamma_values
+        self.output_scale = output_scale
         # Simulation hyper parameters
 
         self.beta = beta
@@ -62,9 +83,9 @@ class SimulationParametersFSST:
         #this i suppose needs to be adjusted
         if self.simulation_type == "FSST":
             self.diode_connected_flash_params = {
-                       "offset1layer" : -0.3,
-                       "offset2layer" : -0.3,
-                       "gain" : [1/7.5e-5, 1/7.5e-5]} #actually the inverse of deltagm/deltavgs
+                       "offset1layer" : -0.4,
+                       "offset2layer" : -0.4,
+                       "gain" : [1/8.5e-5, 1/8.5e-5]} #actually the inverse of deltagm/deltavgs
             
         elif self.simulation_type == "TRAN":
             self.diode_connected_flash_params = {
@@ -90,12 +111,12 @@ class SimulationParametersFSST:
             f"{self.synapse}_{self.simulation_type}_{date_str}"
         )
         # Dataset parameters
-        self.dataset = "moons"
-        self.n_of_epochs = 100
+        self.dataset = "moons_simulation"
+        self.n_of_epochs = 50
         self.scale_factor = scale_factor
         self.noise = 0.1
         self.bias = bias
-        self.num_samples = 1600
+        self.num_samples = 1000
 
 
         

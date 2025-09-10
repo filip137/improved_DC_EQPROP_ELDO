@@ -1,0 +1,2 @@
+START report: Sun Aug 24 15:00:56 2025 
+** Error: (valog-2002) In file /cao/DK/ST/HCMOS9A_10.9/PDK_STM_hcmos9lp_HV_M4_5V0/10.9-10/DATA/MODELS/ELDO/CORNERS/bsim3_addnoise.va, unit 'bsim3_addnoise': Unable to process the unit when creating a file into the physical library path /home/filip/simulations/improved_simulation_functions/testing_funtions/DefaultVlogALib/_OS/aol.

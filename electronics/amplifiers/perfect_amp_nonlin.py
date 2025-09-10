@@ -1,9 +1,9 @@
 perfect_amp_nonlin = { "PARAMS" :
                       """
-.PARAM AMP=1
+.PARAM AMP=4
 .PARAM AMPC=1
-.PARAM VDIODE2=-20
-.PARAM VDIODE1=20
+.PARAM VDIODE2=-0.1
+.PARAM VDIODE1=0.1
                       """,
     
 "SUBCIRCUIT" :

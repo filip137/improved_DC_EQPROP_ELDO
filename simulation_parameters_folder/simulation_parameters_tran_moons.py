@@ -5,8 +5,9 @@ class SimulationParametersTran:
     def __init__(self, scale_factor, bias, batch_size, beta, gamma_values):
         
         
-        mode = "VALIDATION"
-        
+        mode = "TRAIN"
+        self.load_weights = False
+
         
         date_str = datetime.now().strftime("%m%d")
         hour_str = datetime.now().strftime("%H%M%S")
@@ -29,8 +30,8 @@ class SimulationParametersTran:
         
         self.cs_bias = "perfect_curr_source" #"perfect_curr_source" or "self_biased" or False
         if self.cs_bias == "perfect_curr_source": 
-            self.layer1_bias_curr = 4 * 5 * 5 * 1e-6 #When I am using large networks that are difficult to bias with the nmos sources I am using DC sources with this bias current
-            self.layer2_bias_curr = 4 * 5 * 12 * 1e-6 #The idea is that for each synapse that is connected to the neuron they should provide 10e-6 Amps
+            self.layer1_bias_curr = 3 * 5 * 5 * 1e-6 #When I am using large networks that are difficult to bias with the nmos sources I am using DC sources with this bias current
+            self.layer2_bias_curr = 3 * 5 * 12 * 1e-6 #The idea is that for each synapse that is connected to the neuron they should provide 10e-6 Amps
         
  
         self.synapse = "fet" # fet or resistor
@@ -77,8 +78,8 @@ class SimulationParametersTran:
         base_aex = "/home/filip/simulations/aex_files"
         if mode == "TRAIN":
             base_models = "/home/filip/simulations/trained_models"
-        if mode == "TRAIN":
-            base_models = "/home/filip/simulations/trained_models"
+        if mode == "TEST":
+            base_models = "/home/filip/simulations/testing_plots"
         elif mode == "VALIDATION":
             base_models = "/home/filip/simulations/validation_plots"
 
@@ -91,11 +92,11 @@ class SimulationParametersTran:
         )
         # Dataset parameters
         self.dataset = "moons"
-        self.n_of_epochs = 15
+        self.n_of_epochs = 10
         self.scale_factor = scale_factor
         self.noise = 0.1
         self.bias = bias
-        self.num_samples = 1600
+        self.num_samples = 1000
 
 
         

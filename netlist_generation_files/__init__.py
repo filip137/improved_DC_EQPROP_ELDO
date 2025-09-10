@@ -12,7 +12,7 @@ from .layers_initialization import initialize_network_layers
 from .simulation_parameters import SimulationParameters
 from .simulation_parameters_test import SimulationParameters_test
 from .layers_initialization import initialize_network_layers
-
+from .netlist_generation_support_functions import *
 # 2) Define __all__ so "from netlist_generation import *" only pulls these
 __all__ = [
     "BaseLayer",

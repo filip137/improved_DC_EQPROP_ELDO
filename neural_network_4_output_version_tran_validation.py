@@ -559,7 +559,7 @@ def validate(sim_params, h5metrics_data_path): #probably objective function
 
 
     #pids = get_eldo_pids(eldo_identifier = 'eldo_64.exe')
-    m_thread = True
+    m_thread = False
     noascii =  True
     debug = True
     eldo_process, q = start_eldo_simulation_drain(new_sample_file, full_subfolder_path, m_thread, noascii, debug)
@@ -577,7 +577,7 @@ def validate(sim_params, h5metrics_data_path): #probably objective function
         accuracy = net.free_test(eldo_process, X_test, y_test, input_function, mode, h5metrics_data_path, debug)
 
 
-        return accuracy_list
+        return accuracy
         
     except Exception as e:
         send_quit_command(eldo_process)

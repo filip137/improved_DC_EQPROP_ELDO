@@ -307,3 +307,57 @@ def load_sim_parameters(file_path: str) -> SimulationParameters:
     )
 
 
+from typing import Union
+from simulation_parameters_folder import SimulationParametersFSST
+from pathlib import Path
+
+# ---- MAIN LOADER ----
+def load_fsst_simparams(config_path: Union[str, Path]) -> SimulationParametersFSST:
+    """
+    Load a SimulationParametersFSST from a JSON config and overwrite attributes
+    on the created instance with values from the file (including nested dicts).
+
+    Required keys in JSON for constructor:
+        - scale_factor, bias, batch_size, beta, gamma_values, load_weights, h5_file
+    Everything else is applied post-init via attribute overwrite.
+    """
+    config_path = Path(config_path)
+    if not config_path.exists():
+        raise FileNotFoundError(f"Config not found: {config_path}")
+
+    with open(config_path, "r") as f:
+        data = json.load(f)
+
+    required = ["scale_factor", "bias", "batch_size", "beta",
+                "gamma_values", "load_weights", "h5_file"]
+    missing = [k for k in required if k not in data]
+    if missing:
+        raise KeyError(f"Config missing required keys for constructor: {missing}")
+
+    # 1) Construct with the minimal required args
+    sp = SimulationParametersFSST(
+        scale_factor = data["scale_factor"],
+        bias         = data["bias"],
+        batch_size   = data["batch_size"],
+        beta         = data["beta"],
+        gamma_values = data["gamma_values"],
+        output_scale = data["output_scale"],
+        load_weights = data["load_weights"],
+        h5_file      = data["h5_file"],
+    )
+
+    # 2) Overwrite ALL other keys from JSON onto the instance
+    #    (including nested dicts like layer_parameters, transient_params_for_netlist, etc.)
+    for k, v in data.items():
+        # Skip the ones the ctor already set; we'll still set them again to ensure exact match
+        setattr(sp, k, v)
+
+    # 3) Optional: keep derived convenience dicts consistent if the JSON didn't provide them
+    # If your JSON already has these dicts, the setattr above overwrote them; if not, keep sp's originals.
+    # (Nothing to do here unless you want to force a recompute)
+
+    # 4) Optional sanity checks (uncomment if you want hard validation)
+    # _validate_fsst(sp)
+
+    return sp
+

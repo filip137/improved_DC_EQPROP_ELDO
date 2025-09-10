@@ -1,0 +1,31 @@
+[VERILOG-AMS Module]
+NAME = gidl_gisl 
+SOURCE = /cao/DK/ST/HCMOS9A_10.9/PDK_STM_hcmos9lp_HV_M4_5V0/10.9-10/DATA/MODELS/ELDO/CORNERS/gidl_gisl.va 
+LINE = 12
+[Generics]
+( type   real   1.000000e+00 ) 
+( w   real   0.000000e+00 ) 
+( flagtat   real   1.000000e+00 ) 
+( tagidl   real   0.000000e+00 ) 
+( tox   real   3.000000e-09 ) 
+( mstar   real   2.500000e-01 ) 
+( btfgidl   real   1.000000e+00 ) 
+( gmfgidl   real   5.000000e-01 ) 
+( trpgidl   real   0.000000e+00 ) 
+( epsgidl   real   1.000000e-02 ) 
+( ephgidl   real   1.000000e-01 ) 
+( tr   real   2.700000e+01 ) 
+( tcelcius   real   -2.740000e+02 ) 
+( trise   real   0.000000e+00 ) 
+( tbgidl   real   2.610000e+07 ) 
+( tegidl   real   8.000000e-01 ) 
+( agidl   real   0.000000e+00 ) 
+( bgidl   real   2.300000e+09 ) 
+( cgidl   real   5.000000e-01 ) 
+( egidl   real   8.000000e-01 ) 
+( nbgidl   real   1.500000e+00 ) 
+[Ports]
+(PORT TERMINAL d INOUT electrical)
+(PORT TERMINAL s INOUT electrical)
+(PORT TERMINAL minus INOUT electrical)
+(PORT TERMINAL ctrl INOUT electrical)

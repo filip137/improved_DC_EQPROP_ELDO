@@ -1,8 +1,12 @@
+import sys
+sys.path.insert(1, "/home/filip/simulations/improved_simulation_functions/")
+sys.path.insert(1, "/home/filip/simulations/improved_simulation_functions/testing_functions")
+
 from initializer import *
 import datasets as ds
 import numpy as np
 import time
-
+from scipy.optimize import fsolve
 from netlist_generation_files import (
     BaseLayer,
     InputLayer,
@@ -12,15 +16,11 @@ from netlist_generation_files import (
     netlist_builder,
     initialize_network_layers,
 )
-
+from simulation_parameter_TRAN import SimulationParametersTran
+from simulation_parameters_FSST import SimulationParametersFSST
 from save_and_load_functions import (
 save_all, save_sim_parameters, 
 best_epoch_from_dir, load_sim_parameters)
-
-from simulation_parameters_folder import (
-    SimulationParametersFSST,
-    SimulationParametersTran)
-
 from support_layer import *
 from eldo_support_functions import *
 from sklearn.preprocessing import StandardScaler
@@ -61,6 +61,8 @@ class NetworkAnalyzer:
         self.simulation_details = sim_params
         self.nudging_mode = sim_params.nudging_mode
         self.freq = sim_params.freq
+        self.freq_val = float(self.freq.replace("MEG", "e6")) 
+
         self.simulation_type = sim_params.simulation_type
 
         # File paths
@@ -379,16 +381,15 @@ class NetworkAnalyzer:
         # apply the current source width
         cs_pmos_w = self.cs_pmos_w
       
-        input_cmd1 = f"SET P(VAC1) = 0.2"
+        input_cmd1 = f"SET P(VAC1) = 0"
         send_command_to_eldo(eldo_process, input_cmd1, debug)
         input_cmd1 = f"SET P(VAC2) = 0"
         send_command_to_eldo(eldo_process, input_cmd1, debug)
-        input_cmd1 = f"SET P(VAC3) = 0"
+        input_cmd1 = f"SET P(VAC3) = 0.05"
         send_command_to_eldo(eldo_process, input_cmd1, debug)        
-        input_pmos_cs_cmd = f"SET P(PMOS_CS_W)=4u"
-        send_command_to_eldo(eldo_process, input_pmos_cs_cmd, debug)
+
     
-        initialize_synapses(eldo_process, resistive_layers, diode_connected_flash_params, simulation_type, debug)
+        #initialize_synapses(eldo_process, resistive_layers, diode_connected_flash_params, simulation_type, debug)
 
         # initialization
         pulses2resetgm1 = pulses2maxgm1 = None
@@ -428,6 +429,18 @@ class NetworkAnalyzer:
         w_current1_list = []
         w_current2_list = []
         
+        run_simulation_and_wait(eldo_process, simulation_type, q, debug=debug)
+
+        results = read_update(
+                    eldo_process,
+                    result_file,
+                    voltage_dict_free,
+                    offset,
+                    simulation_type,
+                    transcon_calc=True,
+                    debug=debug
+                )
+    
         for i, weight in enumerate(weights):
             w_current1 += delta1
             w_current2 += delta2
@@ -590,8 +603,64 @@ class NetworkAnalyzer:
             
         #def write_weights(self, eldo_process, debug):
         
-        
-                   
+
+    def solve_source_and_gm(self, 
+        Vg_list, 
+        k=8.9e-5/2,
+        I_source=25e-6,
+        Vth=0.537,
+        Vs_guess=None,
+        tol=1e-12
+    ):
+        """
+        Solve for the common source voltage Vs and compute each transistor's transconductance g_m.
+    
+        Parameters
+        ----------
+        Vg_list : array?like
+            Gate voltages [V] for each transistor.
+        k : float, optional
+            Transconductance parameter (?n·Cox·W/L) [A/V^2].
+        I_source : float, optional
+            DC current source [A].
+        Vth : float, optional
+            Threshold voltage [V].
+        Vs_guess : float, optional
+            Initial guess for Vs; if None, defaults to ½·(min(Vg_list) ? Vth).
+        tol : float, optional
+            Tolerance for the root solver.
+    
+        Returns
+        -------
+        Vs : float
+            The solved common source voltage [V].
+        gm_list : ndarray
+            Array of small?signal transconductances [A/V] for each transistor.
+        """
+        Vg = np.array(Vg_list, dtype=float)
+    
+        # pick initial guess if not provided
+        if Vs_guess is None:
+            Vs_guess = (np.min(Vg) - Vth) / 2
+    
+        # residual for current balance
+        def residual(Vs):
+            Ids = k * np.maximum(Vg - Vs - Vth, 0.0)**2
+            return np.sum(Ids) - I_source
+    
+        # solve for Vs
+        Vs_solution, = fsolve(residual, x0=Vs_guess, xtol=tol)
+    
+        # compute overdrive voltages
+        Vov = np.maximum(Vg - Vs_solution - Vth, 0.0)
+    
+        # small-signal transconductance gm = 2 * k * Vov
+        gm_list = 2 * k * Vov
+    
+        return Vs_solution, gm_list       
+         
+
+          
 
     def plot_transcond(self, eldo_process, debug):
         
@@ -1458,41 +1527,202 @@ class NetworkAnalyzer:
         return prediction_list, input_amp_voltages, output_amp_voltages        
         
     def analyze_and_plot(self, eldo_process, input_function, plot_directory, debug):
-      # Start a new figure for this iteration
-      plt.figure()
-      
-      # Define bounds of the domain
-      min1, max1 = -0.4, 0.4
-      min2, max2 = -0.4, 0.4
-      num_points = 10
-  
-      x1grid = np.linspace(min1, max1, num_points)
-      x2grid = np.linspace(min2, max2, num_points)
-  
-      # Create a meshgrid from the grid points
-      xx, yy = np.meshgrid(x1grid, x2grid)
-      X_grid = np.c_[xx.ravel(), yy.ravel()]
-  
+        plt.figure()
     
-      
-  
-      # Make predictions for the grid
-      draw_grid_flag = True
-      h5_path = "/home/filip/simulations/testing_plots/fet_FSST_0802/FSST_114247_262613/plots/metrics_data.h5"
-      if self.simulation_type == "TRAN":
-          outputs, input_amp_voltages, output_amp_voltages = self.free_test_new(eldo_process, X_grid, input_function, mode, h5_path, debug)
-      elif self.simulation_type == "FSST":
-          outputs, input_amp_voltages, output_amp_voltages = self.free_test_new(eldo_process, X_grid, input_function, mode, h5_path, debug)
+        # --- Grid setup ---
+        min1, max1 = -0.4, 0.4
+        min2, max2 = -0.4, 0.4
+        num_points = 8
+        x1grid = np.linspace(min1, max1, num_points)
+        x2grid = np.linspace(min2, max2, num_points)
+        xx, yy = np.meshgrid(x1grid, x2grid)
+        X_grid = np.c_[xx.ravel(), yy.ravel()]
+    
+        # --- Run sweep (raw data collection) ---
+        h5_path = "/home/filip/simulations/trained_models/fet_FSST_0816/FSST_105547_33959/plots/metrics_data"
+        raw_data = self.free_test_new(eldo_process, X_grid, input_function, mode, h5_path, debug)
+        self.plot_nonlin_voltage_vs_current(
+    raw_data,
+    x_key="V_OUT_0_1",
+    y_key="XI011.XI2.XM8.D",
+    title="Drain current vs Output voltage",
+    save_path=None)   
+        
+        
+        # --- Post-processing ---
+        gm_values = compute_transconductance(raw_data)
+        amp_voltage_gain_list = compute_amp_voltage_gain(raw_data)
+        amp_current_gain_list = compute_amp_current_gain(raw_data)
+    
+        # --- Plotting ---
+        epoch = 0
+        av_means, ai_means, ai_labels = self.plot_amp_gains_3d(
+            xx, yy,
+            amp_voltage_gain_list,
+            amp_current_gain_list,
+            title_prefix=self.simulation_type,
+            epoch=epoch
+        )
+    
+        # Compare to official gm
+        official_gm_values = self.layers[1].W[:, 0]
+        print("Predicted gm:", gm_values)
+        print("Official gm values:", official_gm_values)
+    
+    
+        def compute_transconductance(self, raw_data):
+            """Compute gm from currents and voltages."""
+            gm_list = []
+            for V, I in zip(raw_data["voltages"], raw_data["currents"]):
+                try:
+                    dv = V['V_IN_0_1'] - V['V_OUT_0_1']
+                    gm = I['XM_0_1_1.S'] / dv if dv != 0 else np.nan
+                except KeyError:
+                    gm = np.nan
+                gm_list.append(gm)
+            return np.array(gm_list)
+        
+    
+    def compute_amp_voltage_gain(self, raw_data):
+        """Element-wise vout/vin ratio for amplifier stage."""
+        voltage_gain_list = []
+        for vin_vals, vout_vals in zip(raw_data["vin"], raw_data["vout"]):
+            with np.errstate(divide="ignore", invalid="ignore"):
+                Av = np.array(vout_vals) / np.array(vin_vals)
+                Av = np.where(np.isfinite(Av), Av, np.nan)
+            voltage_gain_list.append(Av.tolist())
+        return voltage_gain_list
+    
+    
+    def compute_amp_current_gain(self, raw_data):
+        """Compute amplifier current gain per amplifier block."""
+        amp_gain_list = []
+        for currents in raw_data["currents"]:
+            amp_ids = {
+                k.split('.')[0] for k in currents.keys()
+                if k.startswith('XI0') and (k.endswith('.AMP_INPUT') or k.endswith('.AMP_OUTPUT'))
+            }
+            amp_dict = {}
+            for aid in sorted(amp_ids):
+                i_in = currents.get(f"{aid}.AMP_INPUT")
+                i_out = currents.get(f"{aid}.AMP_OUTPUT")
+                if i_out and i_out != 0:
+                    amp_dict[aid] = i_in / i_out
+                else:
+                    amp_dict[aid] = np.nan
+            amp_gain_list.append(amp_dict)
+        return amp_gain_list
 
-      epoch = 0
-      #self.draw_boundary(xx, yy, outputs, epoch, plot_directory)
-      self.draw_boundary_3d(xx, yy, outputs, epoch, plot_directory, title = self.simulation_type)
-      #self.draw_boundary_3d(xx, yy, input_amp_voltages, epoch, plot_directory, title = "INPUT AMPS")
-      #self.draw_boundary_3d(xx, yy, output_amp_voltages, epoch, plot_directory, title = "OUTPUT AMPS")
+    
+    def plot_nonlin_voltage_vs_current(self, raw_data, x_key="V_OUT_0_1", y_key="XI011.XI2.XM8.D", title=None, save_path=None):
+        """
+        Plot voltage vs current from raw simulation data.
+    
+        Args:
+            raw_data (dict): Dictionary from _sweep_inputs with "voltages" and "currents".
+            x_key (str): Voltage key to plot on x-axis, e.g. "V_OUT_0_1".
+            y_key (str): Current key to plot on y-axis, e.g. "XI011.XI2.XM8.D".
+            title (str, optional): Plot title.
+            save_path (str, optional): If provided, saves the figure to this path.
+        """
+        x_vals, y_vals = [], []
+    
+        for V, I in zip(raw_data["voltages"], raw_data["currents"]):
+            if x_key in V and y_key in I:
+                x_vals.append(V[x_key])
+                y_vals.append(I[y_key])
+    
+        plt.figure(figsize=(6, 4))
+        plt.plot(x_vals, y_vals, "o-", label=f"{y_key} vs {x_key}")
+        plt.xlabel(f"Voltage {x_key}")
+        plt.ylabel(f"Current {y_key}")
+        plt.grid(True)
+        if title:
+            plt.title(title)
+        plt.legend()
+    
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        plt.show()
+    
+        return x_vals, y_vals
 
 
 
-
+    
+    def plot_gm_comparison(self, official_gm_values, measured_average_values, predicted_gm,
+                           title="GM Comparison Across Elements", xlabel="Element Index",
+                           ylabel="gm", figsize=(8, 5), marker_styles=None, line_styles=None):
+        """
+        Plot three GM value arrays as overlaid line plots with markers.
+    
+        Parameters
+        ----------
+        official_gm_values : array-like of shape (N,)
+            The "official" gm values.
+        measured_average_values : array-like of shape (N,)
+            The measured average gm values.
+        predicted_gm : array-like of shape (N,)
+            The predicted gm values.
+        title : str, optional
+            The title of the plot.
+        xlabel : str, optional
+            Label for the x-axis.
+        ylabel : str, optional
+            Label for the y-axis.
+        figsize : tuple, optional
+            Figure size in inches, e.g. (width, height).
+        marker_styles : dict or None, optional
+            Marker styles for each series. E.g.:
+                {
+                    'official': 'o',
+                    'measured': 's',
+                    'predicted': '^'
+                }
+            If None, defaults will be used.
+        line_styles : dict or None, optional
+            Line styles for each series. E.g.:
+                {
+                    'official': '-',
+                    'measured': '--',
+                    'predicted': '-.'
+                }
+            If None, defaults will be used.
+        """
+        # Convert inputs to numpy arrays
+        official = np.asarray(official_gm_values)
+        measured = np.asarray(measured_average_values)
+        predicted = np.asarray(predicted_gm)
+    
+        # Check lengths
+        if not (official.shape == measured.shape == predicted.shape):
+            raise ValueError("All input arrays must have the same shape.")
+    
+        N = official.shape[0]
+        x = np.arange(N)
+    
+        # Default styles
+        if marker_styles is None:
+            marker_styles = {'official': 'o', 'measured': 's', 'predicted': '^'}
+        if line_styles is None:
+            line_styles = {'official': '-', 'measured': '--', 'predicted': '-.'}
+    
+        plt.figure(figsize=figsize)
+        plt.plot(x, official,    linestyle=line_styles.get('official', '-'),
+                 marker=marker_styles.get('official', 'o'), label='Official')
+        plt.plot(x, measured,    linestyle=line_styles.get('measured', '--'),
+                 marker=marker_styles.get('measured', 's'), label='Measured')
+        plt.plot(x, predicted,   linestyle=line_styles.get('predicted', '-.'),
+                 marker=marker_styles.get('predicted', '^'), label='Predicted')
+    
+        plt.title(title)
+        plt.xlabel(xlabel)
+        plt.ylabel(ylabel)
+        plt.xticks(x)                # show every index on the x-axis
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
 
 
     def plot_dc_voltage_list(self, history, keys=None):
@@ -1532,28 +1762,111 @@ class NetworkAnalyzer:
         plt.legend()
         plt.show()
 
+    def _plot_surfaces_3d(self, xx, yy, arr, out_dir, title_prefix, epoch, channel_labels=None):
+        """
+        Plot (N, C) data over meshgrid (xx, yy). Saves one PNG per channel.
+        Returns per?channel means.
+        """
+        H, W = xx.shape
+        N = H * W
+        if arr.shape[0] != N:
+            raise ValueError(f"Input array must have N={N} rows (got {arr.shape[0]}).")
+        os.makedirs(out_dir, exist_ok=True)
     
-    def draw_boundary_3d(self, xx, yy, y_predictions, epoch, plot_directory, title):
-        plt.ion()   # ensure interactive mode is on
-        preds = np.array(y_predictions)
-        n_outputs = 2
+        means = []
+        for ch in range(arr.shape[1]):
+            zz = arr[:, ch].reshape(H, W)
+            m = float(np.nanmean(zz))
+            means.append(m)
     
-        for idx in range(n_outputs):
-            zz = preds[:, idx].reshape(xx.shape)
             fig = plt.figure()
-            ax  = fig.add_subplot(111, projection='3d')
-            surf = ax.plot_surface(xx, yy, zz,
-                                   rstride=1, cstride=1,
-                                   cmap='viridis', edgecolor='none')
-            fig.colorbar(surf, ax=ax, pad=0.1, label='Prediction value')
+            ax = fig.add_subplot(111, projection='3d')
+            surf = ax.plot_surface(xx, yy, zz, rstride=1, cstride=1,
+                                   cmap='viridis', edgecolor='none', alpha=0.9)
+            fig.colorbar(surf, ax=ax, pad=0.1, label='Value')
+            ax.plot_surface(xx, yy, m * np.ones_like(zz),
+                            rstride=1, cstride=1, color='red', alpha=0.3)
     
-            ax.set_title(f"3D Prediction Surface for {title} (epoch {epoch}, output {idx}, )")
-            ax.set_xlabel('Input 1')
-            ax.set_ylabel('Input 2')
-            ax.set_zlabel('Output')
+            label = channel_labels[ch] if channel_labels and ch < len(channel_labels) else f"ch{ch}"
+            ax.set_title(f"{title_prefix} (epoch {epoch}, {label})")
+            ax.set_xlabel('Input 1'); ax.set_ylabel('Input 2'); ax.set_zlabel('Value')
     
-            plt.show()   # each window is now interactive
-
+            fname = f"{title_prefix.replace(' ', '_')}_epoch{epoch}_{label}.png"
+            fig.savefig(os.path.join(out_dir, fname), dpi=150, bbox_inches='tight')
+            plt.close(fig)
+    
+        return means
+    
+    def plot_amp_gains_3d(self, xx, yy,
+                      amp_voltage_gain_list,
+                      amp_current_gain_list,
+                      title_prefix="Amplifications",
+                      epoch=0):
+        """
+        Plot 3D surfaces for voltage gain (Av) and current gain (Ai) over meshgrid (xx, yy).
+        No files are saved; figures are shown. Returns (av_means, ai_means, ai_labels).
+    
+        - Voltage gain values are clipped to [0, 10].
+        - Current gain values are clipped to [-2, 2].
+        """
+        H, W = xx.shape
+        N = H * W
+    
+        # ---- normalize to matrices (N, C) ----
+        def _to_matrix(data, N_expected):
+            if isinstance(data, list) and data and isinstance(data[0], dict):
+                labels = sorted(data[0].keys())
+                arr = np.array([[row.get(k, np.nan) for k in labels] for row in data], dtype=float)
+                if arr.shape[0] != N_expected:
+                    raise ValueError(f"N mismatch: {arr.shape[0]} vs expected {N_expected}")
+                return arr, labels
+            arr = np.asarray(data, dtype=float)
+            if arr.ndim == 1:
+                arr = arr.reshape(-1, 1)
+            if arr.shape[0] != N_expected:
+                raise ValueError(f"N mismatch: {arr.shape[0]} vs expected {N_expected}")
+            return arr, None
+    
+        Av, _        = _to_matrix(amp_voltage_gain_list, N)
+        Ai, ai_labels = _to_matrix(amp_current_gain_list, N)
+        if ai_labels is None:
+            ai_labels = [f"ai{c}" for c in range(Ai.shape[1])]
+        av_labels = [f"av{c}" for c in range(Av.shape[1])]
+    
+        # ---- plotting helper (no save, just show) ----
+        def _plot_surfaces(xx, yy, arr, title_root, labels):
+            means = []
+            for ch in range(arr.shape[1]):
+                zz = arr[:, ch].reshape(H, W)
+                m = float(np.nanmean(zz))
+                means.append(m)
+    
+                fig = plt.figure()
+                ax = fig.add_subplot(111, projection='3d')
+                surf = ax.plot_surface(xx, yy, zz, rstride=1, cstride=1,
+                                       cmap='viridis', edgecolor='none', alpha=0.9)
+                fig.colorbar(surf, ax=ax, pad=0.1, label='Value')
+                ax.plot_surface(xx, yy, m * np.ones_like(zz),
+                                rstride=1, cstride=1, color='red', alpha=0.3)
+    
+                label = labels[ch]
+                ax.set_title(f"{title_root} (epoch {epoch}, {label})")
+                ax.set_xlabel('Input 1'); ax.set_ylabel('Input 2'); ax.set_zlabel('Value')
+                plt.show()
+            return means
+    
+        # ---- clip and plot ----
+        Av_clipped = np.clip(Av, 0, 10)
+        Ai_clipped = np.clip(Ai, -2, 2)
+    
+        av_means = _plot_surfaces(xx, yy, Av_clipped,
+                                  f"{title_prefix} ? Voltage gain Av",
+                                  av_labels)
+        ai_means = _plot_surfaces(xx, yy, Ai_clipped,
+                                  f"{title_prefix} ? Current gain Ai",
+                                  ai_labels)
+    
+        return av_means, ai_means, ai_labels
 
     def draw_boundary(self, xx, yy, y_predictions, epoch, plot_directory):
         """
@@ -1636,11 +1949,11 @@ class NetworkAnalyzer:
         initialize_synapses(eldo_process, resistive_layers, diode_connected_flash_params, simulation_type, debug)
 
       
-        input_cmd1 = f"SET P(VAC1)=20"
+        input_cmd1 = f"SET P(VAC1)=0.3"
         send_command_to_eldo(eldo_process, input_cmd1, debug)
         input_cmd1 = f"SET P(VAC2)=0"
         send_command_to_eldo(eldo_process, input_cmd1, debug)
-        input_cmd1 = f"SET P(VAC3)=-15"
+        input_cmd1 = f"SET P(VAC3)=-0.1"
         send_command_to_eldo(eldo_process, input_cmd1, debug)        
 
         input_cmd1 = f"SET P(AMP)=3"
@@ -1651,7 +1964,7 @@ class NetworkAnalyzer:
 
         input_cmd1 = f"SET P(VDIODE2)=-0.2"
         send_command_to_eldo(eldo_process, input_cmd1, debug)
-        input_cmd1 = f"SET P(VDIODE1)=0.2"
+        input_cmd1 = f"SET P(VDIODE1)=0.6"
         send_command_to_eldo(eldo_process, input_cmd1, debug)  
 
 
@@ -1659,6 +1972,7 @@ class NetworkAnalyzer:
         send_command_to_eldo(eldo_process, input_cmd1, debug)
         input_cmd1 = f"SET P(R_1_1_3)=10000"
         send_command_to_eldo(eldo_process, input_cmd1, debug)  
+
 
         
         if os.path.exists(result_file):
@@ -1677,7 +1991,7 @@ class NetworkAnalyzer:
                         voltage_dict_free,
                         offset,
                         simulation_type,
-                        transcon_calc=True,
+                        transcon_calc=False,
                         debug=debug,
                     )
         voltages_free = results["voltages"].copy()
@@ -1690,10 +2004,16 @@ class NetworkAnalyzer:
         loss_grads = []
         res_nudge_list = []
         
+        layer1_cond = True
+        res_template = "R_0_1_2"
         
-        res_template = "R_1_1_1"
-        og_res = resistive_layers[1].synapse_dict[res_template]
-
+        if layer1_cond:
+            res_layer = resistive_layers[0]
+        else:
+            res_layer = resistive_layers[1]
+            
+        
+        og_res = res_layer.synapse_dict[res_template]    
         
         for delta in delta_arr:
             
@@ -1704,7 +2024,7 @@ class NetworkAnalyzer:
                 offset = file_size
             
             
-            cond = 1/resistive_layers[1].synapse_dict[res_template]
+            cond = 1/res_layer.synapse_dict[res_template]
             nudge = delta * cond
             new_cond = cond + nudge
             new_res = 1/new_cond
@@ -1786,8 +2106,8 @@ class NetworkAnalyzer:
         target = 0
         
         in_node_layer0 = "V_IN_0_1"
-        out_node_layer0 = "V_OUT_0_1"
-        in_node_layer1 = "V_IN_1_1"
+        out_node_layer0 = "V_OUT_0_2"
+        in_node_layer1 = "V_IN_1_2"
         out_node_layer1 = "V_OUT_1_1"
         
         for beta in beta_arr:
@@ -1832,18 +2152,28 @@ class NetworkAnalyzer:
             
             voltage_dict_vol_nudged = results["voltages"].copy()
             
-            
-            voltage_output_f = voltages_free[out_node_layer1]
-            voltage_output_n = voltage_dict_vol_nudged[out_node_layer1]            
-            
-            voltage1f = voltages_free[in_node_layer1]
-            voltage2f = voltages_free[out_node_layer1]
-            diff_F = voltage1f - voltage2f
-            
-            voltage1n = voltage_dict_vol_nudged[in_node_layer1]
-            voltage2n = voltage_dict_vol_nudged[out_node_layer1]
-            diff_N = voltage1n - voltage2n
-            
+            if layer1_cond:
+                voltage_output_f = voltages_free[out_node_layer0]
+                voltage_output_n = voltage_dict_vol_nudged[out_node_layer0]            
+                
+                voltage1f = voltages_free[in_node_layer0]
+                voltage2f = voltages_free[out_node_layer0]
+                diff_F = voltage1f - voltage2f
+                
+                voltage1n = voltage_dict_vol_nudged[in_node_layer0]
+                voltage2n = voltage_dict_vol_nudged[out_node_layer0]
+                diff_N = voltage1n - voltage2n
+            else:
+                voltage_output_f = voltages_free[out_node_layer1]
+                voltage_output_n = voltage_dict_vol_nudged[out_node_layer1]            
+                
+                voltage1f = voltages_free[in_node_layer1]
+                voltage2f = voltages_free[out_node_layer1]
+                diff_F = voltage1f - voltage2f
+                
+                voltage1n = voltage_dict_vol_nudged[in_node_layer1]
+                voltage2n = voltage_dict_vol_nudged[out_node_layer1]
+                diff_N = voltage1n - voltage2n
             
             voltage_nudge = voltage_output_n/voltage_output_f
             voltage_nudge_list.append(voltage_nudge)
@@ -1931,13 +2261,14 @@ class NetworkAnalyzer:
         
         
         diode_connected_flash_params = self.diode_connected_flash_params
-        self._write_weights(resistive_layers, W1, W2)
+        #self._write_weights(resistive_layers, W1, W2)
+        initialize_synapses(eldo_process, resistive_layers, diode_connected_flash_params, simulation_type, debug)
         update_synapses(eldo_process, resistive_layers, diode_connected_flash_params, simulation_type, debug)
         offset = 0
         voltage_dict_free = dict.fromkeys(self.all_nodes[0], None) 
     
         if simulation_type == "TRAN":
-            f0, t0 = 1e6, 20e-6
+            f0, t0 = self.freq_val, 20e-6
             run_simulation_and_wait(eldo_process, simulation_type, q, debug)
             self._setup_tran(eldo_process, result_file,
                                             offset, voltage_dict_free,
@@ -2028,9 +2359,17 @@ class NetworkAnalyzer:
         voltage_dict,
         debug
     ):
+        """
+        Sweep inputs, run Eldo, and collect raw voltages and currents.
+        No gm or gain calculations here.
+        """
         input_dict = self.layers[0].inputs
         keys = list(input_dict.keys())
-        predictions, vin_list, vout_list = [], [], []
+    
+        all_voltages = []   # per X
+        all_currents = []   # per X
+        vin_list, vout_list = [], []
+    
         X_in = input_function(X_grid)
     
         for X in X_in:
@@ -2039,11 +2378,8 @@ class NetworkAnalyzer:
                 input_dict[k] = -X[i] if i < len(X) else 0
             set_input_voltages(eldo_process, input_dict, debug)
     
-            # run sim and read AC
-            try:
-                offset = os.path.getsize(result_file)
-            except FileNotFoundError:
-                offset = 0
+            # run simulation
+            offset = os.path.getsize(result_file) if os.path.exists(result_file) else 0
             run_simulation_and_wait(eldo_process, sim_type, self.q, debug)
             results = read_update(
                 eldo_process,
@@ -2053,68 +2389,38 @@ class NetworkAnalyzer:
                 sim_type,
                 transcon_calc=True,
                 debug=debug,
-                **({'f0': 1e6, 't0': 20e-6} if sim_type == 'TRAN' else {})
+                **({'f0': self.freq_val, 't0': 35e-6,
+                    'plot_target': "currents"} if sim_type == 'TRAN' else {})
             )
-    
             if sim_type == 'TRAN':
                 dc_ds = results["dc_ds_end"]
                 dc_gate = results["dc_gate_end"]
                 set_the_ic_voltages(eldo_process, dc_gate, dc_ds, debug)
-
     
-    
+            # collect raw data
             ac_currents = results.get('ac_currents', results.get('currents'))
-            voltage_dict = results.get('ac_voltages', results.get('voltages'))
+            ac_voltages = results.get('ac_voltages', results.get('voltages'))
+            all_currents.append(ac_currents)
+            all_voltages.append(ac_voltages)
     
-            # compute gms
-            dv1 = voltage_dict['V_IN_0_1'] - voltage_dict['V_OUT_0_1']
-            dv2 = voltage_dict['V_IN_1_2'] - voltage_dict['V_OUT_1_2']
-            gm1 = ac_currents['XM_0_1_1.S'] / dv1
-            gm2 = ac_currents['XM_1_2_2.S'] / dv2
-            clipped = [np.clip(abs(g), 0, 1e-4) for g in (gm1, gm2)]
-    
-            # propagate voltages
+            # update layers (so you can still track free voltages)
             for layer in resistive_layers:
-                layer.update__free_voltages(voltage_dict)
-            output_layer.update__free_voltages(voltage_dict)
+                layer.update__free_voltages(ac_voltages)
+            output_layer.update__free_voltages(ac_voltages)
     
-            vin_list.append(list(resistive_layers[0].output_free_voltages.values()))
-            vout_list.append(list(resistive_layers[1].input_free_voltages.values()))
-            predictions.append(clipped)
+            vin_vals = list(resistive_layers[0].output_free_voltages.values())
+            vout_vals = list(resistive_layers[1].input_free_voltages.values())
+            vin_list.append(vin_vals)
+            vout_list.append(vout_vals)
     
-        return predictions, vin_list, vout_list
+        return {
+            "voltages": all_voltages,   # list of dicts, one per input
+            "currents": all_currents,   # list of dicts, one per input
+            "vin": vin_list,
+            "vout": vout_list,
+        }
     
-    
-    def _setup_tran(
-       self,
-       eldo_process,
-       result_file,
-       offset,
-       voltage_dict,
-       sim_type,
-       q,
-       f0,
-       t0,
-       debug
-   ):
-       # Perform TRAN-specific DC and bias setup
-       results = read_update(
-           eldo_process,
-           result_file,
-           voltage_dict,
-           offset,
-           sim_type,
-           transcon_calc=True,
-           debug=debug,
-           f0=f0,
-           t0=t0
-       )
-       # Extract DC operating point and set initial conditions
-       dc_ds = results["dc_ds_end"]
-       dc_gate = results["dc_gate_end"]
-       set_the_ic_voltages(eldo_process, dc_gate, dc_ds, debug)
 
-       return voltage_dict
 def main_setup(sim_params):
     """
     Core setup for netlist build and directory initialization.
@@ -2184,8 +2490,8 @@ def main_setup(sim_params):
     
     
     #net.calc_gradients(eldo_process, debug)
-    #if simulation_type == "TRAN":
-     #   net.charactarize_synapses_tran(eldo_process, debug)
+    # if simulation_type == "TRAN":
+    #     net.charactarize_synapses_tran(eldo_process, debug)
         
     # elif simulation_type == "FSST":
     #     net.characterize_synapse_fsst(eldo_process, debug)
@@ -2200,16 +2506,18 @@ def main_setup(sim_params):
     
 
 if __name__ == "__main__":
-    gamma_value =  [1e-8, 5e-9]
+    gamma_values =  [1e-8, 5e-9]
     batch_size = 2
     beta = 5e-5
     scale_factor = 0.1
     bias = 0.3
-    simulation_type = "TRAN"
+    simulation_type = "FSST"
     mode = "TESTING"
     if simulation_type == "TRAN":
-        sim_params = SimulationParametersTran(scale_factor, bias, batch_size, beta, gamma_value)
+        sim_params = SimulationParametersTran(scale_factor, bias, batch_size, beta, gamma_values, output_scale = None, load_weights = None, h5_file = None)
     elif simulation_type == "FSST":
-        sim_params = SimulationParametersFSST(scale_factor, bias, batch_size, beta, gamma_value)
+        sim_params = SimulationParametersFSST(scale_factor, bias, batch_size, beta, gamma_values, output_scale = None, load_weights = None, h5_file = None)
+    elif simulation_type == "DC":
+        sim_params = SimulationParametersDC(scale_factor, bias, batch_size, beta, gamma_value, load_weights = None, h5_file = None)
 
     main_setup(sim_params)
