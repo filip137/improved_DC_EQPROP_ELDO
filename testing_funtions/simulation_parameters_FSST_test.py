@@ -1,7 +1,7 @@
 from datetime import datetime
 import os
 
-class SimulationParametersFSST:
+class SimulationParametersFSST_test:
     def __init__(self, scale_factor, bias, batch_size, beta, gamma_values, output_scale, load_weights, h5_file):
         
         
@@ -15,7 +15,7 @@ class SimulationParametersFSST:
 
         # Network initialization parameters
         self.simulation_type = "FSST"  # FSST OR DC OR TRAN
-        self.network_size = [5, 12, 4]  # [input, hidden, output]
+        self.network_size = [5, 15, 4]  # [input, hidden, output]
         self.freq = "5MEG"
         self.neuron = "amp_ss"  # amp_ss or perfect_amp
         self.amplifier = "BiDirWithOutNonLinTest" # "BiDirWithNonLin" or "BiDirWithOutNonLin" or OldBiDirAmp or ThreeTerminalBiDirAmp
@@ -26,20 +26,19 @@ class SimulationParametersFSST:
         
         
         # Assign amplifier
-        self.amplifier = "BiDirWithOutNonLin"  # allowed options below
-        if self.amplifier not in {
-            "BiDirWithNonLin",
-            "BiDirWithOutNonLin",
-            "OldBiDirAmp",
-            "ThreeTerminalBiDirAmp",
-            "PerfectAmpWithNonlin",
-            "BiDirWithNonLinCAP"
-        }:
-            raise ValueError(
-                "amplifier must be one of: "
-                "'BiDirWithNonLin', 'BiDirWithOutNonLin', 'OldBiDirAmp', "
-                "'ThreeTerminalBiDirAmp', 'PerfectAmpWithNonlin'."
-            )
+        # if self.amplifier not in {
+        #     "BiDirWithNonLin",
+        #     "BiDirWithOutNonLin",
+        #     "OldBiDirAmp",
+        #     "ThreeTerminalBiDirAmp",
+        #     "PerfectAmpWithNonlin",
+        #     "BiDirWithNonLinCAP"
+        # }:
+        #     raise ValueError(
+        #         "amplifier must be one of: "
+        #         "'BiDirWithNonLin', 'BiDirWithOutNonLin', 'OldBiDirAmp', "
+        #         "'ThreeTerminalBiDirAmp', 'PerfectAmpWithNonlin'."
+        #     )
             
         if self.amplifier == "ThreeTerminalBiDirAmp":
             self.non_lin = False

@@ -16,8 +16,7 @@ from netlist_generation_files import (
     netlist_builder,
     initialize_network_layers,
 )
-from simulation_parameter_TRAN import SimulationParametersTran
-from simulation_parameters_FSST import SimulationParametersFSST
+from simulation_parameters_FSST_test import SimulationParametersFSST_test as SimulationParametersFSST
 from save_and_load_functions import (
 save_all, save_sim_parameters, 
 best_epoch_from_dir, load_sim_parameters)
@@ -1525,8 +1524,183 @@ class NetworkAnalyzer:
         #print(f"Accuracy: {accuracy:.2f}%")
         
         return prediction_list, input_amp_voltages, output_amp_voltages        
-        
-    def analyze_and_plot(self, eldo_process, input_function, plot_directory, debug):
+   
+    def analyze_and_plot(
+    self,
+    eldo_process,
+    plot_directory,
+    debug=False,
+    *,
+    sweep_mode="grid",          # "grid" | "single"
+    input_function=None,        # required for grid mode
+    X_grid=None,                # optional precomputed grid (grid mode)
+    sweep_index=None,           # single mode
+    sweep_values=None,          # single mode
+    measurements=("vin_sweep",),
+    vin_key="V_IN_0_1",
+    vout_key="V_OUT_0_1",
+    mode=None,
+    h5_path=None,
+    grid_bounds=((-0.4, 0.4), (-0.4, 0.4)),
+    num_points=8,
+    ):
+        """
+        Run Eldo sweeps and generate selected measurements/plots.
+        measurements: tuple of {"nonlin","gm","gain3d","vin_sweep"}.
+        """
+
+        # --- Build grid only if needed ---
+        xx = yy = None
+        if sweep_mode == "grid":
+            if X_grid is None:
+                (min1, max1), (min2, max2) = grid_bounds
+                x1 = np.linspace(min1, max1, num_points)
+                x2 = np.linspace(min2, max2, num_points)
+                xx, yy = np.meshgrid(x1, x2)
+                X_grid = np.c_[xx.ravel(), yy.ravel()]
+            if input_function is None:
+                raise ValueError("Grid mode requires 'input_function'.")
+    
+        # --- Run the test ---
+        raw_data = self.free_test_new(
+            eldo_process,
+            X_grid,
+            input_function,
+            mode,
+            h5_path,
+            debug=debug,
+            sweep_mode=sweep_mode,
+            sweep_index=sweep_index,
+            sweep_values=sweep_values,
+        )
+    
+        # --- Measurements ---
+    
+        # 1) Nonlinear curve
+        if "nonlin" in measurements:
+            self._plot_vs_sweep(
+                raw_data,
+                x_key="V_OUT_0_1",
+                y_key="XI011.XI2.XM8.D",
+                title="Drain current vs Output voltage",
+            )
+    
+        # 2) gm extraction
+        if "gm" in measurements:
+            gm_values = []
+            for V, I in zip(raw_data.get("voltages", []), raw_data.get("currents", [])):
+                try:
+                    dv = V["V_IN_0_1"] - V["V_OUT_0_1"]
+                    gm = I["XM_0_1_1.S"] / dv if dv != 0 else np.nan
+                except KeyError:
+                    gm = np.nan
+                gm_values.append(gm)
+            gm_values = np.asarray(gm_values)
+    
+            try:
+                official_gm = self.layers[1].W[:, 0]
+            except Exception:
+                official_gm = np.asarray(gm_values)
+    
+            plt.figure()
+            plt.plot(np.arange(len(gm_values)), official_gm, label="Official")
+            plt.plot(np.arange(len(gm_values)), gm_values, label="Predicted")
+            plt.legend(); plt.grid(True); plt.title("gm comparison")
+            plt.savefig(os.path.join(plot_directory, "gm.png"), dpi=300, bbox_inches="tight")
+    
+        # 3) 3D gain maps
+        if "gain3d" in measurements and sweep_mode == "grid" and xx is not None:
+            comp_av = getattr(self, "compute_amp_voltage_gain", None)
+            comp_ai = getattr(self, "compute_amp_current_gain", None)
+            plot_3d = getattr(self, "plot_amp_gains_3d", None)
+            if callable(comp_av) and callable(comp_ai) and callable(plot_3d):
+                amp_voltage_gain_list = comp_av(raw_data)
+                amp_current_gain_list = comp_ai(raw_data)
+                plot_3d(xx, yy, amp_voltage_gain_list, amp_current_gain_list,
+                        title_prefix=self.simulation_type, epoch=0)
+    
+        # 4) VIN sweep
+        if "vin_sweep" in measurements:
+            if sweep_mode != "single":
+                raise ValueError("vin_sweep requires sweep_mode='single'.")
+            if sweep_values is None:
+                sweep_values = np.linspace(-0.1, 0.1, 21)
+    
+            # Transfer curve
+            self._plot_vs_sweep(
+                raw_data,
+                x_key=vin_key,
+                y_key=vout_key,
+                title=f"Transfer curve: {vout_key} vs {vin_key}",
+            )
+            
+            ratios = self.plot_isub_over_vout(
+                raw_data,
+                current_keys=["XI011.XM1.D", "XI022.XM1.D", "XI033.XM1.D"],
+                voltage_keys=["V_OUT_0_1", "V_OUT_0_2", "V_OUT_0_3"],
+                input_key="V_IN_0_1",
+                title="Non-linearity transconductance"
+            )
+    
+            # Voltage gain for each amplifier index
+            n_amps = max(len(row) for row in raw_data.get("vin", []) if row) if raw_data.get("vin") else 0
+            n_amps = 3
+            for idx in range(n_amps):
+                vin_vals = [row[idx] for row in raw_data["vin"] if len(row) > idx]
+                vout_vals = [row[idx] for row in raw_data["vout"] if len(row) > idx]
+                Av = np.divide(vout_vals, vin_vals, out=np.full_like(vout_vals, np.nan, dtype=float),
+                               where=np.array(vin_vals) != 0)
+                self._plot_simple(sweep_values, Av, ylabel="Voltage Gain (Av)",
+                                  title=f"Voltage Gain of Amplifier {idx}")
+    
+            # Current gain using XI2.XM8.D / AMP_OUTPUT
+            amp_ids = {k.split(".")[0] for cur in raw_data["currents"]
+                       for k in cur if k.endswith(".AMP_OUTPUT")}
+            for aid in sorted(amp_ids):
+                Ai = []
+                for cur in raw_data["currents"]:
+                    i_in = cur.get(f"{aid}.XI2.XM8.D")
+                    i_out = cur.get(f"{aid}.AMP_OUTPUT")
+                    val = i_in / i_out if (i_in is not None and i_out not in (None, 0)) else np.nan
+                    Ai.append(val)
+                self._plot_simple(sweep_values, Ai, ylabel="Current Gain (Ai)",
+                                  title=f"Current Gain of {aid}")
+
+    # ----------------- Helpers -----------------
+    
+    def _plot_simple(self, x_vals, y_vals, ylabel, title, style="o-"):
+        x_vals, y_vals = np.array(x_vals), np.array(y_vals, dtype=float)
+        n = min(len(x_vals), len(y_vals))
+        if n == 0:
+            print(f"[WARNING] Nothing to plot for {title}")
+            return
+        plt.figure()
+        plt.plot(x_vals[:n], y_vals[:n], style)
+        plt.xlabel("Sweep variable"); plt.ylabel(ylabel)
+        plt.title(title); plt.grid(True); plt.show()
+    
+    def _plot_vs_sweep(self, raw_data, x_key, y_key, title=None, style="o-"):
+        x_vals, y_vals = [], []
+        for V, I in zip(raw_data["voltages"], raw_data["currents"]):
+            xv = V.get(x_key, I.get(x_key))
+            yv = V.get(y_key, I.get(y_key))
+            if xv is not None and yv is not None:
+                x_vals.append(xv); y_vals.append(yv)
+        if not x_vals:
+            print(f"[WARNING] No data found for {x_key} vs {y_key}")
+            return
+        self._plot_simple(x_vals, y_vals, ylabel=y_key, title=title or f"{y_key} vs {x_key}", style=style)
+
+            
+
+
+
+
+
+
+
+     
+    def analyze_and_plot1(self, eldo_process, input_function, plot_directory, debug):
         plt.figure()
     
         # --- Grid setup ---
@@ -1542,11 +1716,11 @@ class NetworkAnalyzer:
         h5_path = "/home/filip/simulations/trained_models/fet_FSST_0816/FSST_105547_33959/plots/metrics_data"
         raw_data = self.free_test_new(eldo_process, X_grid, input_function, mode, h5_path, debug)
         self.plot_nonlin_voltage_vs_current(
-    raw_data,
-    x_key="V_OUT_0_1",
-    y_key="XI011.XI2.XM8.D",
-    title="Drain current vs Output voltage",
-    save_path=None)   
+            raw_data,
+            x_key="V_OUT_0_1",
+            y_key="XI011.XI2.XM8.D",
+            title="Drain current vs Output voltage",
+            save_path=None)   
         
         
         # --- Post-processing ---
@@ -1613,39 +1787,109 @@ class NetworkAnalyzer:
             amp_gain_list.append(amp_dict)
         return amp_gain_list
 
-    
-    def plot_nonlin_voltage_vs_current(self, raw_data, x_key="V_OUT_0_1", y_key="XI011.XI2.XM8.D", title=None, save_path=None):
+    def plot_isub_over_vout(
+    self,
+    raw_data,
+    current_keys,
+    voltage_keys,
+    input_key="V_IN_0_1",
+    title="Non-linearity transconductance vs Input"
+):
         """
-        Plot voltage vs current from raw simulation data.
+        Plot ratios of selected ISUB currents over output voltages vs input.
     
-        Args:
-            raw_data (dict): Dictionary from _sweep_inputs with "voltages" and "currents".
-            x_key (str): Voltage key to plot on x-axis, e.g. "V_OUT_0_1".
-            y_key (str): Current key to plot on y-axis, e.g. "XI011.XI2.XM8.D".
-            title (str, optional): Plot title.
-            save_path (str, optional): If provided, saves the figure to this path.
+        Parameters
+        ----------
+        raw_data : dict
+            Dict with "voltages" and "currents" (each is a list of dicts).
+        current_keys : list of str
+            Keys from raw_data["currents"] (e.g. ["XI011.XM1.D", "XI022.XM1.D", "XI033.XM1.D"]).
+        voltage_keys : list of str
+            Keys from raw_data["voltages"] (e.g. ["V_OUT_0_1", "V_OUT_0_2", "V_OUT_0_3"]).
+        input_key : str
+            The sweep variable to plot against (default = "V_IN_0_1").
+        """
+    
+    
+        voltages = raw_data["voltages"]
+        currents = raw_data["currents"]
+    
+        x_vals = [V.get(input_key, np.nan) for V in voltages]
+        ratio_dict = {ck: [] for ck in current_keys}
+    
+        for V, I in zip(voltages, currents):
+            for ck, vk in zip(current_keys, voltage_keys):
+                cval = I.get(ck)
+                vval = V.get(vk)
+                if cval is not None and vval not in (None, 0):
+                    ratio_dict[ck].append((cval / vval) * 1e6)  # µS
+                else:
+                    ratio_dict[ck].append(np.nan)
+    
+        # Plot
+        plt.figure(figsize=(7, 5))
+        for ck, vk in zip(current_keys, voltage_keys):
+            plt.plot(x_vals, ratio_dict[ck], "o-", label=f"{ck}/{vk}")
+        plt.xlabel(input_key)
+        plt.ylabel("ISUB / Vout [µS]")
+        plt.title(title)
+        plt.grid(True)
+        plt.legend()
+        plt.show()
+    
+        return ratio_dict
+
+    def plot_quantity_vs_quantity(
+        self,
+        raw_data,
+        x_key,
+        y_key,
+        title=None,
+        save_path=None
+    ):
+        """
+        Generic plotter: plot any quantity vs any other.
+        Both x_key and y_key may belong to voltages or currents.
         """
         x_vals, y_vals = [], []
     
         for V, I in zip(raw_data["voltages"], raw_data["currents"]):
-            if x_key in V and y_key in I:
-                x_vals.append(V[x_key])
-                y_vals.append(I[y_key])
+            # search x_key
+            if x_key in V:
+                x_val = V[x_key]
+            elif x_key in I:
+                x_val = I[x_key]
+            else:
+                x_val = None
     
+            # search y_key
+            if y_key in V:
+                y_val = V[y_key]
+            elif y_key in I:
+                y_val = I[y_key]
+            else:
+                y_val = None
+    
+            if x_val is not None and y_val is not None:
+                x_vals.append(x_val)
+                y_vals.append(y_val)
+    
+        if not x_vals:
+            print(f"[plot_quantity_vs_quantity] WARNING: No data found for {x_key} vs {y_key}")
+            
         plt.figure(figsize=(6, 4))
         plt.plot(x_vals, y_vals, "o-", label=f"{y_key} vs {x_key}")
-        plt.xlabel(f"Voltage {x_key}")
-        plt.ylabel(f"Current {y_key}")
+        plt.xlabel(x_key)
+        plt.ylabel(y_key)
         plt.grid(True)
         if title:
             plt.title(title)
         plt.legend()
-    
-        if save_path:
-            plt.savefig(save_path, dpi=300, bbox_inches="tight")
         plt.show()
     
         return x_vals, y_vals
+
+
 
 
 
@@ -2243,50 +2487,84 @@ class NetworkAnalyzer:
         
         return loss_grads, grad1_list
     
-    def free_test_new(self, eldo_process, X_grid, input_function, mode, h5_path, debug=False):
+    def free_test_new(
+        self,
+        eldo_process,
+        X_grid,
+        input_function,
+        mode = None,
+        h5_path = None,
+        debug=False,
+        # NEW sweep controls (optional; keep defaults to preserve old behavior)
+        sweep_mode="grid",          # "grid" or "single"
+        sweep_index=None,           # used for "single"
+        sweep_values=None           # used for "single"
+    ):
         """
         Unified free-test method for both FSST and TRAN simulations.
         Splits common logic into helper functions.
         """
     
-        debug = True
-        # 1. Prepare layers, weights, and inputs
+    
+        # 1) Prepare layers, weights, and inputs
         input_layer, resistive_layers, output_layer = self._prepare_layers()
-        best_idx, best_acc, W1, W2 = best_epoch_from_dir(h5_path)
-
-        # 2. Initial simulation to get offset and DC operating point
+        # Ensure only physical resistive (Dense) layers are swept
+        try:
+            from netlist_generation_files import DenseLayer
+            resistive_layers = [l for l in resistive_layers if isinstance(l, DenseLayer)]
+        except Exception:
+            # If import path differs, keep original list
+            pass
+        if h5_path:
+            best_idx, best_acc, W1, W2 = best_epoch_from_dir(h5_path)
+            W1[0,0] = 10e-5
+            for weight_matrix, layer in zip([W1, W2], resistive_layers):
+                layer.W = weight_matrix
+        # 2) Initial simulation to get offset and DC operating point
+        
         result_file = self.result_file
         simulation_type = self.simulation_type
         q = self.q
-        
-        
+    
         diode_connected_flash_params = self.diode_connected_flash_params
-        #self._write_weights(resistive_layers, W1, W2)
-        initialize_synapses(eldo_process, resistive_layers, diode_connected_flash_params, simulation_type, debug)
-        update_synapses(eldo_process, resistive_layers, diode_connected_flash_params, simulation_type, debug)
+        # self._write_weights(resistive_layers, W1, W2)
+        initialize_synapses(
+            eldo_process, resistive_layers,
+            diode_connected_flash_params, simulation_type, debug
+        )
+        update_synapses(
+            eldo_process, resistive_layers,
+            diode_connected_flash_params, simulation_type, debug
+        )
         offset = 0
-        voltage_dict_free = dict.fromkeys(self.all_nodes[0], None) 
+        voltage_dict_free = dict.fromkeys(self.all_nodes[0], None)
     
         if simulation_type == "TRAN":
             f0, t0 = self.freq_val, 20e-6
             run_simulation_and_wait(eldo_process, simulation_type, q, debug)
-            self._setup_tran(eldo_process, result_file,
-                                            offset, voltage_dict_free,
-                                            simulation_type, q,
-                                            f0, t0, debug)
-
-    # 3. Run sweeps
+            self._setup_tran(
+                eldo_process, result_file,
+                offset, voltage_dict_free,
+                simulation_type, q,
+                f0, t0, debug
+            )
+    
+        # 3) Run sweeps
         return self._sweep_inputs(
-            eldo_process,
-            X_grid,
-            input_function,
-            resistive_layers,
-            output_layer,
-            simulation_type,
-            result_file,
-            offset,
-            voltage_dict_free,
-            debug
+            eldo_process=eldo_process,
+            X_grid=X_grid,
+            input_function=input_function,
+            resistive_layers=resistive_layers,
+            output_layer=output_layer,
+            sim_type=simulation_type,
+            result_file=result_file,
+            offset=offset,
+            voltage_dict=voltage_dict_free,
+            debug=debug,
+            # NEW: pass through sweep controls
+            sweep_mode=sweep_mode,
+            sweep_index=sweep_index,
+            sweep_values=sweep_values,
         )
 
     def _prepare_layers(self):
@@ -2357,30 +2635,65 @@ class NetworkAnalyzer:
         result_file,
         offset,
         voltage_dict,
-        debug
+        debug,
+        # NEW optional args (won?t break old call sites)
+        sweep_mode="grid",          # "grid" or "single"
+        sweep_index=None,           # index of input to sweep in "single" mode
+        sweep_values=None           # 1D array of values for that input
     ):
         """
         Sweep inputs, run Eldo, and collect raw voltages and currents.
         No gm or gain calculations here.
+    
+        Returns
+        -------
+        dict with:
+          - "voltages": list of dicts
+          - "currents": list of dicts
+          - "vin": list[list]  (per-sample amplifier input voltages)
+          - "vout": list[list] (per-sample amplifier output voltages)
         """
+        # ---- Build the list of input vectors X_in according to mode ----
         input_dict = self.layers[0].inputs
         keys = list(input_dict.keys())
     
-        all_voltages = []   # per X
-        all_currents = []   # per X
+        if sweep_mode == "grid":
+            if X_grid is None or input_function is None:
+                raise ValueError("Grid mode requires both X_grid and input_function.")
+            X_in = input_function(X_grid)
+    
+        elif sweep_mode == "single":
+            if sweep_index is None or sweep_values is None:
+                raise ValueError("Single mode requires sweep_index and sweep_values.")
+            # Create [N x num_inputs] with all zeros except the swept index
+            X_in = np.zeros((len(sweep_values), len(keys)), dtype=float)
+            X_in[:, sweep_index] = np.asarray(sweep_values, dtype=float)
+    
+        else:
+            raise ValueError(f"Unknown sweep_mode: {sweep_mode}")
+        mask = np.any(X_in != 0, axis=1)   # keep only rows where at least one input ? 0
+        X_in = X_in[mask]
+        X_in[:,1] = 0.2
+        # ---- Accumulators ----
+        all_voltages = []   # one dict per sample
+        all_currents = []   # one dict per sample
         vin_list, vout_list = [], []
     
-        X_in = input_function(X_grid)
-    
+        # ---- Main sweep loop ----
+        
         for X in X_in:
             # set input vector
             for i, k in enumerate(keys):
-                input_dict[k] = -X[i] if i < len(X) else 0
+                input_dict[k] = -X[i] if i < len(X) else 0.0
             set_input_voltages(eldo_process, input_dict, debug)
     
             # run simulation
             offset = os.path.getsize(result_file) if os.path.exists(result_file) else 0
             run_simulation_and_wait(eldo_process, sim_type, self.q, debug)
+    
+            # read results
+            # note: read_update() in your code already supports both AC/TRAN and returns
+            # ?ac_*? or plain ?*? keys, we normalize here:
             results = read_update(
                 eldo_process,
                 result_file,
@@ -2389,10 +2702,11 @@ class NetworkAnalyzer:
                 sim_type,
                 transcon_calc=True,
                 debug=debug,
-                **({'f0': self.freq_val, 't0': 35e-6,
-                    'plot_target': "currents"} if sim_type == 'TRAN' else {})
+                **({'f0': self.freq_val, 't0': 35e-6, 'plot_target': "currents"} if sim_type == 'TRAN' else {})
             )
+    
             if sim_type == 'TRAN':
+                # refresh DC operating point for next run
                 dc_ds = results["dc_ds_end"]
                 dc_gate = results["dc_gate_end"]
                 set_the_ic_voltages(eldo_process, dc_gate, dc_ds, debug)
@@ -2400,25 +2714,29 @@ class NetworkAnalyzer:
             # collect raw data
             ac_currents = results.get('ac_currents', results.get('currents'))
             ac_voltages = results.get('ac_voltages', results.get('voltages'))
-            all_currents.append(ac_currents)
-            all_voltages.append(ac_voltages)
+            
+            # store independent copies so they don?t all alias the same object
+            all_currents.append(dict(ac_currents) if ac_currents is not None else {})
+            all_voltages.append(dict(ac_voltages) if ac_voltages is not None else {})
     
-            # update layers (so you can still track free voltages)
+            # keep your existing layer bookkeeping
             for layer in resistive_layers:
                 layer.update__free_voltages(ac_voltages)
             output_layer.update__free_voltages(ac_voltages)
     
+            # first amplifier input/output lists (same as your code)
             vin_vals = list(resistive_layers[0].output_free_voltages.values())
             vout_vals = list(resistive_layers[1].input_free_voltages.values())
             vin_list.append(vin_vals)
             vout_list.append(vout_vals)
     
         return {
-            "voltages": all_voltages,   # list of dicts, one per input
-            "currents": all_currents,   # list of dicts, one per input
+            "voltages": all_voltages,
+            "currents": all_currents,
             "vin": vin_list,
             "vout": vout_list,
         }
+
     
 
 def main_setup(sim_params):
@@ -2443,7 +2761,7 @@ def main_setup(sim_params):
     input_files = create_filenames(sim_params.output_dir, sim_params.sample_file, simulation_type, process_id)
     full_subfolder_path, new_sample_file, result_file_path = input_files
    #printfile = os.path.join(full_subfolder_path, "PRINTFILE.TXT")
-
+   
 
     all_nodes = extract_all_nodes_voltages(layers)
     builder.build_netlist(new_sample_file, transcon_calc, fet_identifiers, result_file_path)
@@ -2498,7 +2816,32 @@ def main_setup(sim_params):
 
     #net.plot_transcond(eldo_process, debug)
 
-    net.analyze_and_plot(eldo_process, pos_neg_inputs, plot_dir, debug)
+#     net.analyze_and_plot(
+#     eldo_process,
+#     plot_directory,
+#     debug=False,
+#     sweep_mode="grid",
+#     X_grid=None,
+#     input_function=None,
+#     sweep_index=None,
+#     sweep_values=None,
+# )
+# 2) Sweep only V_IN_0_1, plot transfer + amplifier gains
+    sweep_values = np.linspace(-0.1, 0.1, 30)
+    sweep_values = np.linspace(-0.2, 0.4, 40)
+    h5_file = '/home/filip/simulations/trained_models/fet_FSST_0901/FSST_194837_14300/plots/metrics_data'
+    net.analyze_and_plot(
+        eldo_process,
+        plot_directory="/path/to/plots",
+        sweep_mode="single",
+        sweep_index=0,
+        sweep_values=sweep_values,
+        measurements=("vin_sweep",),
+        vin_key="V_IN_0_1",
+        vout_key="V_OUT_0_1",
+        mode="FSST",
+        h5_path=h5_file
+    )
     ###here I run the analyyer
     
     
