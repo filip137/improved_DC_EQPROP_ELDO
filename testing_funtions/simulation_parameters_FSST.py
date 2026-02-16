@@ -33,12 +33,14 @@ class SimulationParametersFSST:
             "OldBiDirAmp",
             "ThreeTerminalBiDirAmp",
             "PerfectAmpWithNonlin",
-            "BiDirWithNonLinCAP"
+            "BiDirWithNonLinCAP",
+            "PerfectAmpQuadraticDiode"
         }:
             raise ValueError(
                 "amplifier must be one of: "
                 "'BiDirWithNonLin', 'BiDirWithOutNonLin', 'OldBiDirAmp', "
-                "'ThreeTerminalBiDirAmp', 'PerfectAmpWithNonlin'."
+                "'ThreeTerminalBiDirAmp', 'PerfectAmpWithNonlin', "
+                "'BiDirWithNonLinCAP', 'PerfectAmpQuadraticDiode'."
             )
             
         if self.amplifier == "ThreeTerminalBiDirAmp":

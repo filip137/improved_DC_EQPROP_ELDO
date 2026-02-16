@@ -28,12 +28,14 @@ class SimulationParametersDC_iris:
             "BiDirWithOutNonLin",
             "OldBiDirAmp",
             "ThreeTerminalBiDirAmp",
-            "PerfectAmpWithNonlin"
+            "PerfectAmpWithNonlin",
+            "PerfectAmpQuadraticDiode"
         }:
             raise ValueError(
                 "amplifier must be one of: "
                 "'BiDirWithNonLin', 'BiDirWithOutNonLin', 'OldBiDirAmp', "
-                "'ThreeTerminalBiDirAmp', 'PerfectAmpWithNonlin'."
+                "'ThreeTerminalBiDirAmp', 'PerfectAmpWithNonlin', "
+                "'PerfectAmpQuadraticDiode'."
             )
             
         if self.amplifier == "ThreeTerminalBiDirAmp":

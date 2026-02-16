@@ -195,7 +195,40 @@ def extract_all_nodes_voltages(layers):
             drain_source_nodes.extend(in_node)
             drain_source_nodes.extend(out_node)
     
+
     return drain_source_nodes, gate_nodes_list
+
+def extract_free_node_voltages(layers):
+    """
+    Return drain/source nodes from trainable layers, excluding input nodes.
+    """
+    drain_source_nodes = []
+    gate_nodes_list = []
+    for layer in layers:
+        if layer.trainable:
+            in_node = layer.input_node_list
+            out_node = layer.output_node_list
+            gate_nodes = layer.gate_node_list
+            gate_nodes_list.extend(gate_nodes)
+            drain_source_nodes.extend(in_node)
+            drain_source_nodes.extend(out_node)
+
+    drain_source_nodes = [
+        node for node in drain_source_nodes if not node.startswith("V_IN_0_")
+    ]
+    return drain_source_nodes, gate_nodes_list
+
+def extract_last_layer_node_voltages(layers):
+    """
+    Return drain/source nodes from the last trainable layer only.
+    """
+    for layer in reversed(layers):
+        if layer.trainable:
+            drain_source_nodes = []
+            drain_source_nodes.extend(layer.input_node_list)
+            drain_source_nodes.extend(layer.output_node_list)
+            return drain_source_nodes
+    return []
 
 def parse_aex_file(filename, start_index, end_index, simulation_type = "AC"):
     # Dictionary to store extracted data
@@ -1352,7 +1385,7 @@ def read_update(
 def set_the_ic_voltages(eldo_process, dc_gate_end_dict, dc_ds_voltage_dict,debug):
     for node, val in dc_gate_end_dict.items():
         key = f"W_{node[3:]}"
-        send_command_to_eldo(eldo_process, f"SET P({key})={round(val,3)}", debug)
+        send_command_to_eldo(eldo_process, f"SET P({key})={round(val,6)}", debug)
     ds_params = make_param_dict(dc_ds_voltage_dict, prefix="V_END_")
     for key, val in ds_params.items():
         send_command_to_eldo(eldo_process, f"SET P({key})={val}", debug)

@@ -1,9 +1,11 @@
 import numpy as np
 import os
 import json
-import h5py
+#import h5py
+
 from typing import Optional, Sequence, Any, Dict, Union, Tuple
 from netlist_generation_files import SimulationParameters
+
 def load_metrics(h5_path: str) -> Dict[str, Any]:
     with h5py.File(h5_path, "r") as f:
         out = {}

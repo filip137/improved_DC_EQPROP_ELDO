@@ -13,16 +13,19 @@ def initialize_network_layers(simulation_parameters):
     
     # Extract layer parameters
     layer_params = simulation_parameters.layer_parameters
-    simulation_type = layer_params["simulation_type"]
-    fc_layers       = layer_params["network_size"]
-    freq            = layer_params["freq"]
-    neuron          = layer_params["neuron"]
-    nudging_mode    = layer_params["nudging_mode"]
-    bounds          = layer_params["bounds"]
-    synapse         = layer_params["synapse"] 
-    gamma1, gamma2  = layer_params["gamma_values"]
-    cs_bias         = layer_params["cs_bias"]
-    non_lin         = layer_params["non_lin"]
+    simulation_type = layer_params.get("simulation_type", "default_type")
+    fc_layers       = layer_params.get("network_size")
+    freq            = layer_params.get("freq", 0)
+    non_linearity_type = layer_params.get("non_linearity_type", layer_params.get("non_linearity"))
+    if non_linearity_type is None:
+        non_linearity_type = layer_params.get("neuron")
+    nudging_mode    = layer_params.get("nudging_mode", None)
+    bounds          = layer_params.get("bounds", (0.0, 1.0))
+    synapse         = layer_params.get("synapse", "default_synapse")
+    gamma_values = layer_params.get("gamma_values", (0.0, 0.0))
+    cs_bias         = layer_params.get("cs_bias", 0.0)
+    non_lin         = layer_params.get("non_lin", False)
+    include_bias    = layer_params.get("include_bias", False)
     
     
     transient_params = simulation_parameters.layer_parameters
@@ -37,63 +40,53 @@ def initialize_network_layers(simulation_parameters):
         freq=freq,
         simulation_type=simulation_type,
         which_layer=0,
+        include_bias=include_bias,
     )
     layers.append(input_layer)
     
-    # First Dense Layer
-    layer1 = DenseLayer(
-        n_of_inputs=fc_layers[0],
-        n_of_outputs=fc_layers[1],
-        synapse=synapse,
-        bounds=bounds,
-        gamma=gamma1,
-        initializer=weight_initializer,
-        freq=freq,
-        simulation_type=simulation_type,
-        which_layer=0,
-    )
-    layer1.initialize_W()
-    #layer1.update_synapse_dict()
-    layers.append(layer1)
-    
-    # Non-linear Layer
-    layer2 = NonLinearLayer(
-        n_of_nodes=fc_layers[1],
-        neuron_type=neuron,
-        cs_bias=cs_bias,
-        non_lin=non_lin,
-        which_layer=0,
-        freq=freq,
-        simulation_type=simulation_type,
-    )
-    layers.append(layer2)
-    
-    # Second Dense Layer
-    layer3 = DenseLayer(
-        n_of_inputs=fc_layers[1],
-        n_of_outputs=fc_layers[2],
-        synapse=synapse,
-        bounds=bounds,
-        gamma=gamma2,
-        initializer=weight_initializer,
-        freq=freq,
-        simulation_type=simulation_type,
-        which_layer=1,
-    )
-    layer3.initialize_W()
-    #layer3.update_synapse_dict()
-    layers.append(layer3)
-    
-    # Output Layer
-    layer4 = OutputLayer(
-        n_of_nodes=fc_layers[2],
-        freq=freq,
-        simulation_type=simulation_type,
-        nudging_mode=nudging_mode,
-        cs_bias=cs_bias,
-        which_layer=1,
-    )
-    layers.append(layer4)
+    if not isinstance(gamma_values, (list, tuple)):
+        gamma_values = [gamma_values]
+    n_dense_layers = max(len(fc_layers) - 1, 0)
+    if len(gamma_values) < n_dense_layers:
+        pad_value = gamma_values[-1] if gamma_values else 0.0
+        gamma_values = list(gamma_values) + [pad_value] * (n_dense_layers - len(gamma_values))
+
+    for idx in range(n_dense_layers):
+        dense_layer = DenseLayer(
+            n_of_inputs=fc_layers[idx],
+            n_of_outputs=fc_layers[idx + 1],
+            synapse=synapse,
+            bounds=bounds,
+            gamma=gamma_values[idx],
+            initializer=weight_initializer,
+            freq=freq,
+            simulation_type=simulation_type,
+            which_layer=idx,
+        )
+        dense_layer.initialize_W()
+        layers.append(dense_layer)
+
+        if idx < n_dense_layers - 1:
+            non_linear_layer = NonLinearLayer(
+                n_of_nodes=fc_layers[idx + 1],
+                non_linearity_type=non_linearity_type,
+                cs_bias=cs_bias,
+                non_lin=non_lin,
+                which_layer=idx,
+                freq=freq,
+                simulation_type=simulation_type,
+            )
+            layers.append(non_linear_layer)
+
+    if n_dense_layers > 0:
+        output_layer = OutputLayer(
+            n_of_nodes=fc_layers[-1],
+            freq=freq,
+            simulation_type=simulation_type,
+            nudging_mode=nudging_mode,
+            cs_bias=cs_bias,
+            which_layer=n_dense_layers - 1,
+        )
+        layers.append(output_layer)
     
     return layers
-

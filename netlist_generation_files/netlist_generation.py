@@ -11,7 +11,7 @@ from .layer_class import BaseLayer, InputLayer, DenseLayer, NonLinearLayer, Outp
 from .simulation_parameters import SimulationParameters
 from .layers_initialization import initialize_network_layers
 from datetime import datetime
-from support_layer import extract_all_nodes_voltages
+from support_layer import extract_all_nodes_voltages, extract_last_layer_node_voltages
 import netlist_generation_support_functions as ngsf
 
 
@@ -19,25 +19,29 @@ class netlist_builder():
     def __init__(self, layers, simulation_parameters):
         
         self.layers = layers
-        self.neuron = simulation_parameters.neuron
+        self.non_linearity = getattr(simulation_parameters, 'non_linearity', None)
+        if self.non_linearity is None:
+            self.non_linearity = simulation_parameters.neuron
         self.amplifier = simulation_parameters.amplifier
-        self.freq = simulation_parameters.freq
-        self.simulation_time = simulation_parameters.simulation_time
+        self.freq = getattr(simulation_parameters, 'freq', None)
+        self.simulation_time = getattr(simulation_parameters, 'simulation_time', None)
         self.simulation_type = simulation_parameters.simulation_type
         self.synapse =  simulation_parameters.synapse
         #self.network_parameters_for_netlist = simulation_parameters.network_parameters_for_netlist
         self.libraries = ".LIB /home/filip/CMOS130/corners.eldo \n"
         self.cs_bias = simulation_parameters.cs_bias
-        self.transient_params_for_netlist = simulation_parameters.transient_params_for_netlist
-        self.fsst_params_for_netlist = simulation_parameters.fsst_params_for_netlist
-        
+
+        #THIS IS AWKWARD -- I WILL JUST HAVE A SINGLE self._params_for_netlist
+        #self.transient_params_for_netlist = simulation_parameters.transient_params_for_netlist
+        #self.fsst_params_for_netlist = simulation_parameters.fsst_params_for_netlist
+        self._params_for_netlist = simulation_parameters._params_for_netlist
         self.bidir_dict = dicts[simulation_parameters.amplifier]
 
         
         
     def extract_subcircuits(self):
         subcircuit_lines = []
-        if self.neuron:
+        if self.non_linearity:
             lines = self.bidir_dict['SUBCIRCUIT']
             subcircuit_lines.append(lines)
         if self.cs_bias == "self_biased":  
@@ -58,7 +62,7 @@ class netlist_builder():
        
     def extract_cmos_params(self):
         cmos_params = []
-        if self.neuron:
+        if self.non_linearity:
             lines = self.bidir_dict['PARAMS']
             cmos_params.append(lines)
         
@@ -150,6 +154,11 @@ class netlist_builder():
             for key, value in self.fsst_params_for_netlist.items():
                 line = f".PARAM {key}={value}"
                 network_parameters.append(line)
+        
+        elif self.simulation_type == "DC":
+            for key, value in self._params_for_netlist.items():
+                line = f".PARAM {key}={value}"
+                network_parameters.append(line)
         return network_parameters
 
     
@@ -164,7 +173,220 @@ class netlist_builder():
             lines.append(line)
         return "\n".join(lines)
 
-    def build_netlist(self, file_name, transcon_calc, fet_identifiers = None, printfile = None):
+    def _build_fsst_details(self, nodes_to_plot, transcon_calc, fet_identifiers):
+        counter = 0
+        vm_list = []
+        vdc_list = []
+        for node in nodes_to_plot:
+            if counter == 0:
+                vm_list.append(".EXTRACT FSST")
+                vdc_list.append(".EXTRACT FSST")
+            vm_node = f"YVAL(V({node}), {self.freq})"
+            vdc_node = f"V({node})"
+            vm_list.append(vm_node)
+            vdc_list.append(vdc_node)
+            counter += 1
+            if counter == 5:
+                vm_list.append("\n")
+                vdc_list.append("\n")
+                counter = 0
+
+        vm_string = " ".join(filter(None, vm_list)).replace(" \n.", "\n.")
+        vdc_string0 = " ".join(filter(None, vdc_list)).replace(" \n.", "\n.")
+        isub_string = ""
+        vdc_string = ""
+        idc_string = ""
+        isub_yval_terms = []
+
+        if transcon_calc:
+            fet1, fet2 = fet_identifiers[0], fet_identifiers[1]
+            fet3, fet4 = "1_3_2", "1_4_2"
+            fet5, fet6, fet7, fet8 = "0_2_1", "0_3_1", "0_4_1", "0_5_1"
+
+            measure_mosfet_current = True
+            if measure_mosfet_current:
+                isub_yval_terms += ngsf._yval_isub_terms(
+                    [fet1, fet2, fet5, fet6, fet7, fet8], freq=self.freq
+                )
+            measure_amp_current = True
+            if measure_amp_current:
+                amp_fets = (
+                    [f"I0{i}{i}.AMP_INPUT" for i in range(1, 4)]
+                    + [f"I0{i}{i}.AMP_OUTPUT" for i in range(1, 4)]
+                )
+                cccs_drain_currents = [f"I0{i}{i}.XI2.XM8.D" for i in range(1, 4)]
+                nonlin_drain_currents = [f"XI0{i}{i}.XM1.D" for i in range(1, 4)]
+
+                amp_yval_terms = [f"YVAL(ISUB(X{fet}), {self.freq})" for fet in amp_fets]
+                cccs_yval_terms = [f"YVAL(ISUB(X{d}), {self.freq})" for d in cccs_drain_currents]
+                nonlin_yval_terms = [f"YVAL(ISUB({d}), {self.freq})" for d in nonlin_drain_currents]
+
+                isub_yval_terms += amp_yval_terms + cccs_yval_terms + nonlin_yval_terms
+
+            isub_string = self.format_extract_lines(isub_yval_terms, chunk_size=6)
+
+            idc_terms = ngsf._idc_isub_terms([fet1, fet2, fet3, fet4, fet5, fet6, fet7, fet8])
+            measure_source_current = False
+            if measure_source_current:
+                idc_terms += [
+                    "ISUB(XSBCS011.INOUTPUT_SELF_BIASED_CS)",
+                    "ISUB(XPMOS_CS2.INOUTPUT_PMOS_CS)",
+                ]
+
+            idc_string = ngsf._extract_line("FSST", idc_terms)
+
+            vdc_terms = ["V(V_IN_1_2)", "V(V_OUT_0_1)", "V(V_OUT_1_2)"]
+            vdc_string = ngsf._extract_line("FSST", vdc_terms)
+
+        simulation_details = (
+            f".SST FUND1={self.freq} NHARM1=1\n"
+            f"{vm_string}\n"
+            f"{isub_string}\n"
+            f"{idc_string}\n"
+            f"{vdc_string}\n"
+            f"{vdc_string0}\n"
+            ".OPTION AEX\n"
+            ".OPTION NOASCII\n"
+            ".END\n"
+        )
+        return simulation_details
+
+    def _build_tran_details(self, nodes_to_plot, gate_nodes, transcon_calc, fet_identifiers, printfile):
+        vm_list = []
+        print_vg_values = True
+        vg_ic_list = []
+        end_volt_list = []
+        vds_ic_list = []
+        all_nodes = nodes_to_plot + gate_nodes
+        counter = 0
+        for node in all_nodes:
+            if counter == 0:
+                vm_list.append(
+                    f".PRINTFILE TRAN FILE={printfile} START=0 STOP={self.simulation_time}"
+                )
+            vm_node = f"V({node})"
+            vm_list.append(vm_node)
+            counter += 1
+            if counter == 5:
+                vm_list.append("\n")
+                counter = 0
+        vm_string = " ".join(filter(None, vm_list)).replace(" \n.", "\n.")
+
+        counter_vds = 0
+        for node in nodes_to_plot:
+            if counter_vds == 0:
+                vds_ic_list.append(".IC")
+            vds, identifier = node.split("_", 1)
+            volt = "V_END_" + identifier
+            param_line = f".PARAM {volt} = 0"
+            end_volt_list.append(param_line)
+            vds_ic_list.append(f"V({node})={volt}")
+            counter_vds += 1
+            if counter_vds == 5:
+                vds_ic_list.append("\n")
+                counter_vds = 0
+
+        vds_string = " ".join(filter(None, vds_ic_list)).replace(" \n.", "\n.")
+
+        counter = 0
+        for node in gate_nodes:
+            if counter == 0:
+                vg_ic_list.append(".IC")
+            vg, identifier = node.split("_", 1)
+            weight = "W_" + identifier
+            vg_ic_list.append(f"V({node})={weight}")
+            counter += 1
+            if counter == 5:
+                vg_ic_list.append("\n")
+                counter = 0
+        vg_string = " ".join(filter(None, vg_ic_list)).replace(" \n.", "\n.")
+
+        print_file_line = f".PRINTFILE TRAN FILE={printfile} START=0 STOP={self.simulation_time}"
+        isub_string = ""
+        if transcon_calc:
+            fet1 = fet_identifiers[0]
+            fet2 = fet_identifiers[1]
+            fet_current = False
+            if fet_current:
+                fet5 = "0_2_1"
+                fet6 = "0_3_1"
+                fet7 = "0_4_1"
+                fet8 = "0_5_1"
+                pmos_cs = "XPMOS_CS2.INOUTPUT_PMOS_CS"
+                isub_string = (
+                    f"{print_file_line} ISUB(XSBCS011.INOUTPUT_SELF_BIASED_CS) "
+                    f"ISUB(XM_{fet1}.S) ISUB(XM_{fet2}.S) ISUB({pmos_cs}) \n"
+                )
+                isub2_string = (
+                    f"{print_file_line} ISUB(XM_{fet5}.S) ISUB(XM_{fet6}.S) "
+                    f"ISUB(XM_{fet7}.S) ISUB(XM_{fet8}.S) \n"
+                )
+
+                isub_string += " " + isub2_string
+            measure_amp_current = True
+            if measure_amp_current:
+                amp_fets = [f"I0{i}{i}.AMP_INPUT" for i in range(1, 3)] + \
+                           [f"I0{i}{i}.AMP_OUTPUT" for i in range(1, 3)]
+                drain_current = [f"I0{i}{i}.XI2.XM8.D" for i in range(1, 3)]
+                isub3_string = f"{print_file_line} " + " ".join([f"ISUB(X{fet})" for fet in amp_fets]) + "\n"
+                drain_string = f"{print_file_line} " + " ".join([f"ISUB(X{fet})" for fet in drain_current]) + "\n"
+                isub_string += " " + isub3_string
+                isub_string += " " + drain_string
+        else:
+            isub_string = ""
+        amp_string = (
+            f"{print_file_line} V(XI011.XI1.OUTPUT_CS_1) V(XI011.XI1.OUTPUT_CS_2) "
+            f"V(XI011.NET05) V(XI011.XI2.INPUT_DIFFERENTIAL1) "
+            f"V(XI011.XI2.INPUT_DIFFERENTIAL2)"
+        )
+        inudge_string = "I(I_SOURCE2)"
+        amp_string += " " + inudge_string
+        amp_characterization = True
+
+        if self.freq == "1MEG":
+            sampling_rate = "0.1u"
+        elif self.freq == "5MEG":
+            sampling_rate = "0.02u"
+        elif self.freq == "10MEG":
+            sampling_rate = "0.01u"
+        simulation_details = (
+            f".TRAN {sampling_rate} {self.simulation_time} uic\n"
+            f"{isub_string}\n"
+            f"{amp_string}\n"
+            f"{vm_string}\n"
+            f"{vg_string}\n"
+            f"{vds_string}\n"
+            f".OPTION PRINTFILE_TIME_STEP={sampling_rate}\n"
+            ".OPTION NOASCII\n"
+            ".END\n"
+        )
+        return simulation_details, end_volt_list
+
+    def _build_dc_details(self, nodes_to_plot):
+        vdc_list = []
+        counter = 0
+        for node in nodes_to_plot:
+            if counter == 0:
+                vdc_list.append(".EXTRACT DC")
+            vdc_node = f"V({node})"
+            vdc_list.append(vdc_node)
+            counter += 1
+            if counter == 5:
+                vdc_list.append("\n")
+                counter = 0
+        vdc_string = " ".join(filter(None, vdc_list)).replace(" \n.", "\n.")
+
+        simulation_details = (
+            f".DC\n"
+            f"{vdc_string}\n"
+            ".OPTION AEX\n"
+            ".OPTION NOASCII\n"
+            ".OPTION MTHREAD\n"            
+            ".END\n"
+        )
+        return simulation_details
+
+    def build_netlist(self, file_name, transcon_calc, fet_identifiers = None, printfile = None, validate = False):
             
             #needs frequency, neuron, file_name, all_nodes
             
@@ -178,8 +400,6 @@ class netlist_builder():
             
             
             simulation_type = self.simulation_type 
-            freq = self.freq
-            simulation_time = self.simulation_time   
             #parameter_lines.extend(amp_parameter_lines)
             layers = self.layers
             layer_parameter_lines = self.extract_layer_parameters(layers) #these are the parameters from the layers
@@ -191,6 +411,10 @@ class netlist_builder():
             network_description = self.extract_connections(layers) #these are the connections which so far are generated in the layers
             subcircuits = self.extract_subcircuits()
             drain_source_nodes, gate_nodes = extract_all_nodes_voltages(layers) #drain and source nodes
+            if validate:
+                nodes_to_plot = extract_last_layer_node_voltages(layers)
+            else:
+                nodes_to_plot = drain_source_nodes
             # Get current date and time
             current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
@@ -208,246 +432,19 @@ class netlist_builder():
             #not really sure how/if I can avoid doing this
             mid_sect = subcircuits
 
-            counter = 0 
-            
             if simulation_type == "FSST":
-                vm_list = []
-                vdc_list = []
-                for node in drain_source_nodes:
-                    if counter == 0:
-                        vm_list.append(".EXTRACT FSST")
-                        vdc_list.append(".EXTRACT FSST")
-                    vm_node = f"YVAL(V({node}), {freq})"
-                    vdc_node = f"V({node})"
-                    vm_list.append(vm_node)
-                    vdc_list.append(vdc_node)
-                    counter += 1
-                    if counter == 5:
-                        # Append the current line and reset for a new one
-                        vm_list.append("\n")
-                        vdc_list.append("\n")
-                        counter = 0
-               # Join the vm_list into a string, removing unnecessary spaces and ensuring formatting
-                vm_string = " ".join(filter(None, vm_list)).replace(" \n.", "\n.")
-                vdc_string0 = " ".join(filter(None, vdc_list)).replace(" \n.", "\n.")
-                # vi_string = " ".join(filter(None, vi_list)).replace(" \n.", "\n.")
-                isub_string = ""
-                vdc_string = ""
-                idc_string = ""
-                
-                isub_string = ""
-                idc_string  = ""
-                vdc_string  = ""
-                isub_yval_terms = []
-                
-                if transcon_calc:
-                    # --- Short names for readability ---
-                    fet1, fet2 = fet_identifiers[0], fet_identifiers[1]
-                    fet3, fet4 = "1_3_2", "1_4_2"
-                    fet5, fet6, fet7, fet8 = "0_2_1", "0_3_1", "0_4_1", "0_5_1"
-                
-                    # Collect all AC current terms here
-                    isub_yval_terms = []
-                
-                    # --- AC small-signal currents (YVAL -> AC) ---
-                    measure_mosfet_current = True
-                    if measure_mosfet_current:
-                        isub_yval_terms += ngsf._yval_isub_terms(
-                            [fet1, fet2, fet5, fet6, fet7, fet8], freq=self.freq
-                        )
-                    measure_amp_current = True
-                    if measure_amp_current:
-                        amp_fets = (
-                            [f"I0{i}{i}.AMP_INPUT" for i in range(1, 4)]
-                            + [f"I0{i}{i}.AMP_OUTPUT" for i in range(1, 4)]
-                        )
-                        cccs_drain_currents = [f"I0{i}{i}.XI2.XM8.D" for i in range(1, 4)]
-                        nonlin_drain_currents = [f"XI0{i}{i}.XM1.D" for i in range(1, 4)]
-                
-                        amp_yval_terms = [f"YVAL(ISUB(X{fet}), {self.freq})" for fet in amp_fets]
-                        cccs_yval_terms = [f"YVAL(ISUB(X{d}), {self.freq})" for d in cccs_drain_currents]
-                        nonlin_yval_terms = [f"YVAL(ISUB({d}), {self.freq})" for d in nonlin_drain_currents]
-                
-                        isub_yval_terms += amp_yval_terms + cccs_yval_terms + nonlin_yval_terms
-                
-                    # Convert AC terms to FSST line
-                    isub_string = self.format_extract_lines(isub_yval_terms, chunk_size=6)
-#isub_string = ngsf._extract_line("FSST", isub_yval_terms)
-                
-                    # --- DC / operating-point currents (ISUB -> DC) ---
-                    idc_terms = ngsf._idc_isub_terms([fet1, fet2, fet3, fet4, fet5, fet6, fet7, fet8])
-                    measure_source_current = False
-                    if measure_source_current:
-                        idc_terms += [
-                            "ISUB(XSBCS011.INOUTPUT_SELF_BIASED_CS)",
-                            "ISUB(XPMOS_CS2.INOUTPUT_PMOS_CS)",
-                        ]
-                
-                    idc_string = ngsf._extract_line("FSST", idc_terms)
-                
-                    # --- Voltages ---
-                    vdc_terms = ["V(V_IN_1_2)", "V(V_OUT_0_1)", "V(V_OUT_1_2)"]
-                    vdc_string = ngsf._extract_line("FSST", vdc_terms)
-
-
-                simulation_details = (
-                    
-                        
-
-                f".SST FUND1={freq} NHARM1=1\n"
-                f"{vm_string}\n" ##here also append vi string if it's needed
-                f"{isub_string}\n"
-                f"{idc_string}\n"
-                f"{vdc_string}\n"
-                f"{vdc_string0}\n"
-                ".OPTION AEX\n"
-                ".OPTION NOASCII\n"
-                ".END\n"
+                simulation_details = self._build_fsst_details(
+                    nodes_to_plot, transcon_calc, fet_identifiers
                 )
-
-    
-    
-            #the idea is that each gate voltage is set by the uic command to the value of the last run
-            #so I need both Inudge parameters as the Weights, which are esentially the gate voltages
-            elif simulation_type == "TRAN":
-                vm_list = []
-                print_vg_values = True
-                # if print_vg_values:
-                #     drain_source_nodes.extend(gate_nodes)
-                vg_ic_list = []   
                 end_volt_list = []
-                vds_list =[]
-                vds_ic_list = []
-                all_nodes = drain_source_nodes + gate_nodes
-                for node in all_nodes:
-                    if counter == 0:
-                        printfile = printfile
-                        vm_list.append(f".PRINTFILE TRAN FILE={printfile} START=0 STOP={self.simulation_time}")
-                    vm_node = f"V({node})"
-                    vm_list.append(vm_node)
-                    counter += 1
-                    if counter == 5:
-                        # Append the current line and reset for a new one
-                        vm_list.append("\n")
-                        counter = 0
-               # Join the vm_list into a string, removing unnecessary spaces and ensuring formatting
-                vm_string = " ".join(filter(None, vm_list)).replace(" \n.", "\n.")
-                counter = 0
-                # vi_string = " ".join(filter(None, vi_list)).replace(" \n.", "\n.")
-
-                counter_vds = 0
-                for node in drain_source_nodes:
-                    if counter_vds == 0:
-                        vds_ic_list.append(".IC")
-                    vds, identifier = node.split("_", 1)
-                    volt = "V_END_" + identifier
-                    param_line = f".PARAM {volt} = 0"
-                    end_volt_list.append(param_line)
-                    vds_ic_list.append(f"V({node})={volt}")
-                    counter_vds += 1
-                    if counter_vds == 5:
-                        vds_ic_list.append("\n")
-                        counter_vds = 0
-                
-                vds_string = " ".join(filter(None, vds_ic_list)).replace(" \n.", "\n.")               
-                
-                for node in gate_nodes:
-                    if counter == 0:
-                        vg_ic_list.append(".IC")
-                    vg_node = node
-                    vg, identifier = node.split("_", 1) # now I build the string for the weight again, this should probably be avoided
-                    weight = "W_" + identifier
-                    vg_ic_list.append(f"V({node})={weight}")
-                    counter += 1
-                    if counter == 5:
-                        # Append the current line and reset for a new one
-                        vg_ic_list.append("\n")
-                        counter = 0
-               # Join the vm_list into a string, removing unnecessary spaces and ensuring formatting
-                vg_string = " ".join(filter(None, vg_ic_list)).replace(" \n.", "\n.")
-                # vi_string = " ".join(filter(None, vi_list)).replace(" \n.", "\n.")                
-                print_file_line = f".PRINTFILE TRAN FILE={printfile} START=0 STOP={self.simulation_time}"
-                isub_string = ""
-                if transcon_calc:
-                    fet1 = fet_identifiers[0]
-                    fet2 = fet_identifiers[1]
-                    fet_current = False
-                    if fet_current:
-                        fet5 = "0_2_1"
-                        fet6 = "0_3_1"
-                        fet7 = "0_4_1"
-                        fet8 = "0_5_1"
-                        pmos_cs = f"XPMOS_CS2.INOUTPUT_PMOS_CS"
-                        isub_string = f"{print_file_line} ISUB(XSBCS011.INOUTPUT_SELF_BIASED_CS) ISUB(XM_{fet1}.S) ISUB(XM_{fet2}.S) ISUB({pmos_cs}) \n"
-                        isub2_string = f"{print_file_line} ISUB(XM_{fet5}.S) ISUB(XM_{fet6}.S) ISUB(XM_{fet7}.S) ISUB(XM_{fet8}.S) \n"
-                        
-                        isub_string += " " + isub2_string
-                    measure_amp_current = True
-                    if measure_amp_current:
-                        amp_fets = [f"I0{i}{i}.AMP_INPUT" for i in range(1, 3)] + \
-                                   [f"I0{i}{i}.AMP_OUTPUT" for i in range(1, 3)]
-                        drain_current =  [f"I0{i}{i}.XI2.XM8.D" for i in range(1, 3)]
-                        isub3_string = f"{print_file_line} " + " ".join([f"ISUB(X{fet})" for fet in amp_fets]) + "\n"
-                        drain_string = f"{print_file_line} " + " ".join([f"ISUB(X{fet})" for fet in drain_current]) + "\n"
-                        isub_string += " " + isub3_string
-                        isub_string += " " + drain_string
-                                   
-                else:
-                    isub_string = ""
-                amp_string = f"{print_file_line} V(XI011.XI1.OUTPUT_CS_1) V(XI011.XI1.OUTPUT_CS_2) V(XI011.NET05) V(XI011.XI2.INPUT_DIFFERENTIAL1) V(XI011.XI2.INPUT_DIFFERENTIAL2)"
-                inudge_string = "I(I_SOURCE2)"
-                amp_string += " " + inudge_string
-                amp_characterization = True
-                
-                if freq == "1MEG":
-                    sampling_rate = "0.1u"
-                elif freq == "5MEG":
-                    sampling_rate = "0.02u"
-                elif freq == "10MEG":
-                    sampling_rate = "0.01u"
-                simulation_details = (
-                f".TRAN {sampling_rate} {self.simulation_time} uic\n"
-                f"{isub_string}\n"
-                f"{amp_string}\n"
-                f"{vm_string}\n"
-                f"{vg_string}\n"
-                f"{vds_string}\n"
-                f".OPTION PRINTFILE_TIME_STEP={sampling_rate}\n"
-                ".OPTION NOASCII\n"
-                ".END\n"
+            elif simulation_type == "TRAN":
+                simulation_details, end_volt_list = self._build_tran_details(
+                    nodes_to_plot, gate_nodes, transcon_calc, fet_identifiers, printfile
                 )
-                #f".AC LIST {freq}\n"
-
-                    
-                    
             elif simulation_type == "DC":
-                vdc_list = []
-                for node in drain_source_nodes:
-                    if counter == 0:
-                        vdc_list.append(".EXTRACT DC")
-                    vdc_node = f"V({node})"
-                    vdc_list.append(vdc_node)
-                    counter += 1
-                    if counter == 5:
-                        # Append the current line and reset for a new one
-                        vdc_list.append("\n")
-                        counter = 0
-               # Join the vm_list into a string, removing unnecessary spaces and ensuring formatting
-                vdc_string = " ".join(filter(None, vdc_list)).replace(" \n.", "\n.")
-                # vi_string = " ".join(filter(None, vi_list)).replace(" \n.", "\n.")
-                
-                
-                
-                
-                simulation_details = (
-                    
-                    f".DC\n"
-                    f"{vdc_string}\n" ##here also append vi string if it's needed
-                    ".OPTION AEX\n"
-                    ".OPTION NOASCII\n"
-                    ".END\n"
-                )
-                
+                simulation_details = self._build_dc_details(nodes_to_plot)
+                end_volt_list = []
+
 
                                  
             with open(file_name, 'w') as file:
@@ -479,5 +476,3 @@ class netlist_builder():
                             file.write(line)  # Write each line from the sections
                 file.write(simulation_details)
             print(f"Network description and parameters have been saved to {file_name}.")
-
-

@@ -56,6 +56,7 @@ class InputLayer(BaseLayer):
         simulation_type: str,
         which_layer: int = 0,
         trainable: bool = False,
+        include_bias: bool = False,
     ):
         super().__init__(
             n_of_inputs      = n_of_nodes,         # BaseLayer?s first param
@@ -80,6 +81,7 @@ class InputLayer(BaseLayer):
             
             
         self.trainable = False
+        self.include_bias = include_bias
         self.inputs = {} ##this becomes a dict 
         # The number of inputs will now equal the number of outputs (n_of_nodes)
         self.output_node_list = self.generate_node_names()
@@ -110,19 +112,10 @@ class InputLayer(BaseLayer):
     
     def generate_variables(self):
         vac_parameters = []
-        for i in range(1, self.n_of_inputs + 1):
-            if self.simulation_type == "FSST":
-                v_ac = f"VAC{i}"
-                self.inputs[v_ac] = 0
-            # if self.simulation_type == "DC":
-            #     v_ac = f"VDC{i}"
-            #     self.inputs[v_ac] = 0
-            if self.simulation_type == "TRAN":
-                v_ac = f"VAC{i}"
-                self.inputs[v_ac] = 0
-            if self.simulation_type == "DC":
-                v_ac = f"VAC{i}"
-                self.inputs[v_ac] = 0
+        n_signal_inputs = self.n_of_inputs
+        for i in range(1, n_signal_inputs + 1):
+            v_ac = f"VAC{i}"
+            self.inputs[v_ac] = 0
             vac_parameters.append(v_ac)
         #vac_parameters.append("V_BIAS1")
         return vac_parameters
@@ -138,7 +131,9 @@ class InputLayer(BaseLayer):
         lines = []
         input_nodes = self.input_node_list
         output_nodes = self.output_node_list
-        vol_sources = self.layer_parameters
+        vol_sources = list(self.layer_parameters)
+        if self.include_bias:
+            vol_sources.append("VBIAS")
         freq = self.freq
         for i, (node, source) in enumerate(zip(output_nodes, vol_sources)):
             if self.simulation_type == "FSST":
@@ -167,7 +162,7 @@ class NonLinearLayer(BaseLayer):
     def __init__(
         self,
         n_of_nodes: int,            
-        neuron_type: str,
+        non_linearity_type: str,
         cs_bias: str,
         non_lin: bool,
         which_layer: int ,       # can still default it
@@ -189,7 +184,7 @@ class NonLinearLayer(BaseLayer):
         # Call the methods to generate and assign attributes
         self.input_node_list = self.build_input_nodes()
         self.output_node_list = self.build_output_nodes()
-        self.neuron_type = neuron_type
+        self.non_linearity_type = non_linearity_type
         self.trainable = False
         self.cs_bias = cs_bias #"perfect_curr_source" or "self_biased"
         self.non_lin = non_lin
@@ -242,7 +237,7 @@ class NonLinearLayer(BaseLayer):
         for i, (in_node, out_node) in enumerate(zip(in_nodes, out_nodes)):
             in_node_int = int(in_node.split("_")[-1])
             out_node_int = int(out_node.split("_")[-1])
-            if self.neuron_type == "amp_ss":     
+            if self.non_linearity_type == "amp_ss":     
                 #This already includes the current source biasing                               
                 line1 = f"XI{layer}{in_node_int}{out_node_int} {in_node} {out_node} {self.amplifiers_name}\n"
                 if self.cs_bias == "self_biased":
@@ -262,8 +257,18 @@ class NonLinearLayer(BaseLayer):
                     discharge_line_0 = None
                                 
                 line = [line1, line_cs_bias, discharge_line_0]
-            elif self.neuron_type == "perfect_amp":
-                line = f"XI{layer}{in_node_int}{out_node_int} {in_node} {out_node} NEURON\n"
+            elif self.non_linearity_type == "double_diode_exponential":
+                line = (
+                    f"XI{layer}{in_node_int}{out_node_int} {in_node} {out_node} "
+                    "DOUBLE_DIODE_EXPONENTIAL\n"
+                )
+            elif self.non_linearity_type == "double_diode_quadratic":
+                line = f"XI{layer}{in_node_int}{out_node_int} {in_node} {out_node}" "DOUBLE_DIODE_QUADRATIC\n"
+
+            elif self.non_linearity_type == "single_diode_exponential":
+                half = len(in_nodes) // 2
+                subckt = "SINGLE_DIODE_POS" if i < half else "SINGLE_DIODE_NEG"
+                line = f"XI{layer}{in_node_int}{out_node_int} {in_node} {out_node} {subckt}\n"
             else:
                 raise ValueError("Invalid neuron name")
             lines.append(line)
@@ -418,7 +423,7 @@ class DenseLayer(BaseLayer):
                 layer = self.which_layer
                 if self.synapse == "resistor":
                     res = f"R_{layer}_{first_index}_{second_index}"
-                    line = f"R{layer}{first_index}{second_index} {input_node_name} {output_node_name} {res}\n"
+                    line = f"R_{layer}_{first_index}_{second_index} {input_node_name} {output_node_name} {res}\n"
                 if self.synapse == "fet":
                     line = []
                     identifier = f"{layer}_{first_index}_{second_index}"
@@ -589,7 +594,8 @@ class DenseLayer(BaseLayer):
             gain = diode_connected_flash_params["gain"] 
         # 1) Build the raw synapse matrix
         if self.synapse == 'resistor':
-            self.synapse_matrix  = 1.0 / self.W
+            safe_w = np.where(self.W == 0, 1e-9, self.W)
+            self.synapse_matrix  = 1.0 / safe_w
     
         elif self.synapse == 'fet':
             # pick the right offset
@@ -733,7 +739,9 @@ class OutputLayer(BaseLayer):
             if self.nudging_mode == "current":
                 source = f"I_SOURCE{i}"
             elif self.nudging_mode == "voltage":
-                source = f"V_SOURCE{i}"            
+                source = f"V_SOURCE{i}"   
+            else:
+                source = ""
             sources.append(source)
         return sources
     
